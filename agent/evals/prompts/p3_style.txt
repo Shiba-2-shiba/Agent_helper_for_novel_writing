@@ -1,0 +1,12 @@
+Check style adherence for the drafted scene.
+
+Input:
+- style contract (POV, narration tense, dialogue rules, lexical rules)
+- actual draft text
+
+Return:
+1) pov_status (pass/fail)
+2) dialogue_style_status (pass/fail)
+3) lexical_status (pass/fail)
+4) violations: up to 3 concrete lines/patterns
+5) rewrite_hints: 3 concise hints to restore style consistency

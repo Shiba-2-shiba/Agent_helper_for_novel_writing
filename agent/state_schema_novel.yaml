@@ -1,0 +1,76 @@
+version: 3
+
+# novel catalog state schema
+# このファイルは、現行運用で参照する「可変状態の正本」です。
+# 特定作品の完成データを固定で持たず、各プロジェクトで埋めて使う前提の共通スキーマとして扱います。
+# 不変ルールは `memory/global_notes.md`、手順は `skills/SKILL_*.md` を参照してください。
+
+project:
+  name: "" # 例: "modern_isekai_42"
+  path: "" # 例: "C:\\Users\\...\\modern_isekai_42"
+  status: "active" # 例: active / paused / revision / completed
+  notes: "" # 例: "第3章を執筆中。終盤の再設計なし"
+
+source_of_truth:
+  prose_files: "scene txt files" # 通常運用では、本文の正本はシーン単位 txt
+  chapter_notes_file: "body.md" # `body.md` は章方針メモや大幅改稿時のみ使う
+  backlog_files: [] # 例: ["00_restart_plan.md", "99_progress_checkpoint.md"]
+
+profile:
+  genre: "" # 例: isekai / fantasy / romance
+  target_audience: "" # 例: "10〜20代ラブコメ読者"
+  tone: "" # 例: "コメディ寄り"
+  pov_default: "" # 例: "三人称（主人公寄り）"
+
+targets:
+  total_chars: 100000
+  chapter_chars: {} # 例: {"1": 20000, "2": 20000}
+  scene_default_chars: 1250
+  scene_min_chars: 1000
+  scene_max_chars: 1500
+
+style_contract:
+  pov: "" # 例: "三人称（主人公寄り）"
+  narration_tense: "" # 例: "過去形"
+  dialogue_rules: [] # 例: ["主人公は短めで乾いた口調", "相手役は敬語を崩しすぎない"]
+  lexical_rules: [] # 例: ["本文は地の文と会話のみ", "見出しを入れない"]
+  tone_watch: [] # 例: ["会話テンポ優先", "説明過多にしない"]
+
+characters:
+  [] # 例:
+  # - name: "主人公名"
+  #   role: "主人公"
+  #   traits: ["慎重", "観察力が高い"]
+  #   notes: "対人距離が近すぎない"
+
+story_constraints:
+  must_include: [] # 例: ["各話末に未解決要素を残す"]
+  must_avoid: [] # 例: ["作者注釈", "読者への直接語りかけ"]
+
+continuity_watch:
+  unresolved_threads: [] # 未回収の謎、約束、対立
+  upcoming_payoffs: [] # 次章や次シーンで回収予定の要素
+  risk_flags: [] # 例: ["主人公の動機が弱い", "文体がぶれ始めている"]
+
+active_work:
+  current_mode: "" # one of: idea_generation / project_bootstrap / setting_creation / scene_planning / novel / revision / consistency_audit / polish / resume_orchestrator
+  recommended_skill: "" # 例: "SKILL_novel"
+  primary_scope: "" # 例: "chapter_3_scene_2"
+  active_chapter: 0 # 例: 3
+  active_scene: "" # 例: "3-2"
+  next_action: "" # 例: "scene 3-2 の初稿を作成"
+  files_to_check_first: [] # 例: ["05_chapter_outline_100k.md", "chapter_3_scene_1.txt"]
+
+progress:
+  total_chapters: 0
+  completed_chapters: [] # 例: [1, 2]
+  current_chapter: 0
+  current_scene: "" # 例: "2-4"
+  total_chars_written: 0
+  chapter_chars_written: {} # 例: {"1": 18400, "2": 6200}
+
+recent_decisions:
+  [] # 直近の重要判断を短く記録する。詳細は `decisions_log.md`
+
+open_questions:
+  [] # まだ方針未確定の論点

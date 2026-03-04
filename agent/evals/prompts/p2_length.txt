@@ -1,0 +1,13 @@
+Check only length compliance for the drafted scene.
+
+Input:
+- min_chars
+- target_chars
+- max_chars
+- actual draft text
+
+Return:
+1) actual_chars
+2) status (pass/fail)
+3) gap_to_min (0 if pass)
+4) suggestion: 2 short proposals to increase depth without breaking continuity

@@ -1,0 +1,17 @@
+You are evaluating an agent output for STRUCTURE quality.
+
+Score 1-5 on each dimension:
+1. Completeness: Does the output cover all required sections/deliverables?
+2. Format: Is the format correct (e.g., Markdown, YAML, specified file names)?
+3. Length: Is the output within the requested length range?
+
+Respond in this format:
+Completeness: <score> — <one-line reason>
+Format: <score> — <one-line reason>
+Length: <score> — <one-line reason>
+Overall: <average score>
+
+Agent output to evaluate:
+---
+{output}
+---

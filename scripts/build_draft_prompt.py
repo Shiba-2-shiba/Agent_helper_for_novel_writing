@@ -1,0 +1,99 @@
+import argparse
+import os
+import sys
+
+from prompt_utils import (
+    DEFAULT_MAX_CHARS,
+    DEFAULT_MIN_CHARS,
+    DEFAULT_TARGET_CHARS,
+    RUNTIME_PROMPT_WARN_LIMIT,
+    UserFacingError,
+    estimate_tokens,
+    require_existing_file,
+    read_text_file,
+    resolve_project_path,
+    resolve_relative_path,
+    validate_char_bounds,
+    write_text_file,
+)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Build a draft-only prompt from compact runtime files.")
+    parser.add_argument("--project", required=True, help="Path to the project directory")
+    parser.add_argument("--runtime_dir", default="", help="Optional runtime directory path")
+    parser.add_argument("--min_chars", type=int, default=DEFAULT_MIN_CHARS, help="Minimum target characters")
+    parser.add_argument("--target_chars", type=int, default=DEFAULT_TARGET_CHARS, help="Preferred target characters")
+    parser.add_argument("--max_chars", type=int, default=DEFAULT_MAX_CHARS, help="Maximum target characters")
+    args = parser.parse_args()
+
+    validate_char_bounds(args.min_chars, args.target_chars, args.max_chars)
+    project_dir = resolve_project_path(args.project)
+    if not os.path.isdir(project_dir):
+        raise UserFacingError(f"project directory not found: {project_dir}")
+
+    if args.runtime_dir:
+        runtime_dir = resolve_relative_path(args.runtime_dir, base_dirs=[project_dir], must_exist=True)
+    else:
+        runtime_dir = os.path.join(project_dir, "runtime")
+
+    style_path = require_existing_file(os.path.join(runtime_dir, "style_contract_compact.md"), "runtime/style_contract_compact.md")
+    brief_path = require_existing_file(os.path.join(runtime_dir, "scene_brief_compact.md"), "runtime/scene_brief_compact.md")
+    continuity_path = require_existing_file(os.path.join(runtime_dir, "continuity_pack.md"), "runtime/continuity_pack.md")
+    request_path = require_existing_file(os.path.join(runtime_dir, "request_compact.md"), "runtime/request_compact.md")
+
+    style_contract = read_text_file(style_path).strip()
+    scene_brief = read_text_file(brief_path).strip()
+    continuity_pack = read_text_file(continuity_path).strip()
+    request_compact = read_text_file(request_path).strip()
+
+    prompt = "\n\n".join(
+        [
+            "あなたは初稿専用の執筆エージェントです。",
+            "圧縮済みのランタイム文脈だけを使い、最初の骨格を安定して作ってください。",
+            "## Style Contract",
+            style_contract,
+            "## Scene Brief",
+            scene_brief,
+            "## Continuity Pack",
+            continuity_pack,
+            "## Request Compact",
+            request_compact,
+            "## Output Contract",
+            f"- 目安文字数: {args.min_chars} / {args.target_chars} / {args.max_chars} 字（min/target/max）",
+            "- 初稿は1回目の骨格生成として扱う",
+            "- 最低文字数未達でも失敗扱いにしない",
+            "- ただし構造・文体・前後接続を優先する",
+            "- 本文のみ出力",
+        ]
+    )
+    estimated_tokens = estimate_tokens(prompt)
+    part_estimates = {
+        "style_contract": estimate_tokens(style_contract),
+        "scene_brief": estimate_tokens(scene_brief),
+        "continuity_pack": estimate_tokens(continuity_pack),
+        "request_compact": estimate_tokens(request_compact),
+    }
+
+    output_path = os.path.join(runtime_dir, "draft_prompt.txt")
+    write_text_file(output_path, prompt + "\n")
+    print(f"OK: draft prompt generated at {output_path}")
+    print(f"OK: estimated_tokens={estimated_tokens} runtime_budget={RUNTIME_PROMPT_WARN_LIMIT}")
+    if estimated_tokens > RUNTIME_PROMPT_WARN_LIMIT:
+        print(
+            "WARN: draft prompt is larger than the recommended runtime budget; "
+            "prefer trimming the largest runtime section before sending it to the model"
+        )
+        for name, tokens in sorted(part_estimates.items(), key=lambda item: (-item[1], item[0])):
+            print(f"WARN: part_tokens {name}={tokens}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except UserFacingError as exc:
+        print(f"ERROR: {exc}")
+        sys.exit(1)
+    except Exception:
+        print("ERROR: unexpected failure while generating draft prompt")
+        sys.exit(1)

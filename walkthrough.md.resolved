@@ -1,0 +1,73 @@
+# ブラッシュアップ完了レポート
+
+## 実施した変更
+
+### フェーズ1: スクリプトのバグ修正（致命的5件）
+
+| 修正ID | 対象 | 内容 |
+|---|---|---|
+| S1 | [idea_generator.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/scripts/idea_generator.py) | 出力先を `script_dir` 基準のプロジェクトルートに固定 |
+| S3 | [build_llm_prompt.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/scripts/build_llm_prompt.py) | `--project` を絶対パス解決（実行場所依存を解消） |
+| S4 | [build_llm_prompt.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/scripts/build_llm_prompt.py) | [03_world_building.md](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/templates/03_world_building.md) と [04_plot_outline.md](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/templates/04_plot_outline.md) の読み込みを追加（セクション3・4） |
+| S6 | [init_project.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/scripts/init_project.py) | 既存ディレクトリ検出時に `sys.exit(1)` で明示的エラー終了 |
+| S7 | [idea_generator.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/scripts/idea_generator.py) | 空回答を `[〇〇未設定]` に変換してログラインを整形 |
+
+### フェーズ2: ワークフロー断絶の修正
+
+- [init_project.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/scripts/init_project.py) に `--from_ideas` オプションを追加
+  - `generated_ideas.md` をプロジェクトにコピー
+  - ログラインを [01_concept_sheet.md](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/templates/01_concept_sheet.md) に自動転記
+
+### フェーズ3: トークン管理（[build_llm_prompt.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/scripts/build_llm_prompt.py) に統合済み）
+
+- 簡易トークン推定（文字数÷2）を実装
+- 27,000トークン超過時に警告とファイル別内訳を表示
+- `--chapter` に対応した章ブロック選択抽出（全アウトラインではなく対象章のみ）
+
+### フェーズ4: テンプレートの改善（5ファイル）
+
+| 修正ID | ファイル | 内容 |
+|---|---|---|
+| T1 | [02_character_sheet.md](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/templates/02_character_sheet.md) | キャラ×型の相性表をMarkdownテーブル形式に変換 |
+| T2 | [05_chapter_outline_100k.md](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/templates/05_chapter_outline_100k.md) | 第2〜5章に章ごとコメディ型チェックリストを追加（`<details>`形式） |
+| T3 | [04_plot_outline.md](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/templates/04_plot_outline.md) | 各幕のチェックリストを `<details>` 折りたたみに変更（視覚ノイズ削減） |
+| T4 | [03_world_building.md](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/templates/03_world_building.md) | コメディ専用節に「ラブコメ以外では省略可」注記を追加 |
+| T5 | 全テンプレート | 冒頭にクロスリファレンスコメントを追加 |
+| W3 | [init_project.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/scripts/init_project.py) | `body.md` の見出しを日本語（例: 「第1章：起（導入）」）に変更 |
+
+### フェーズ5: テスト整備
+
+- [tests/test_scripts.py](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/tests/test_scripts.py) を新規作成（7テストケース）
+- **テスト結果: 7/7 PASSED ✅**
+
+```
+tests/test_scripts.py::TestInitProject::test_creates_correct_folder_structure PASSED
+tests/test_scripts.py::TestInitProject::test_exits_with_error_on_existing_directory PASSED
+tests/test_scripts.py::TestInitProject::test_from_ideas_transfers_logline PASSED
+tests/test_scripts.py::TestBuildLLMPrompt::test_generates_output_file PASSED
+tests/test_scripts.py::TestBuildLLMPrompt::test_output_contains_required_sections PASSED
+tests/test_scripts.py::TestBuildLLMPrompt::test_exits_with_error_on_missing_project PASSED
+tests/test_scripts.py::TestBuildLLMPrompt::test_token_estimate_is_printed PASSED
+
+7 passed in 0.96s
+```
+
+### フェーズ6: ドキュメント整備
+
+- [README.md](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/README.md) を新規作成（クイックスタート・ファイル構成・オプション詳細）
+- [walkthrough.md.resolved](file:///c:/Users/inott/Downloads/%E5%B0%8F%E8%AA%AC%E4%BD%9C%E6%88%90/walkthrough.md.resolved) → `walkthrough.md` にコピー（拡張子を整理）
+
+---
+
+## 修正後のワークフロー
+
+```
+# 1. アイデア出し
+python scripts/idea_generator.py
+
+# 2. プロジェクト作成（アイデアを自動転記）
+python scripts/init_project.py my_novel --from_ideas
+
+# 3. テンプレート記入後、LLMプロンプト生成（トークン推定付き）
+python scripts/build_llm_prompt.py --project my_novel --chapter 1
+```

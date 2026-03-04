@@ -1,0 +1,16 @@
+Evaluate the draft scene using:
+- concept sheet
+- character sheet
+- style contract (POV / tone / dialogue rules)
+- length contract (min / target / max chars)
+
+Return:
+1) continuity_risks: 3 items
+2) style_violations: up to 3 items
+3) length_compliance:
+   - actual_chars
+   - min_chars
+   - target_chars
+   - max_chars
+   - status (pass/fail)
+4) fixes: 3 concrete fixes
