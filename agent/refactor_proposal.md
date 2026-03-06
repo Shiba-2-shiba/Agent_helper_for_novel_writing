@@ -70,24 +70,24 @@
 
 ### Existing Skills To Retain
 
-- `SKILL_idea_generation.md`
-- `SKILL_setting_creation.md`
-- `SKILL_novel.md`
+- `agent/skills/idea-generator/SKILL.md`
+- `agent/skills/setting-creator/SKILL.md`
+- `agent/skills/novel-writer/SKILL.md`
 
 ### New Skills To Add
 
-- `SKILL_revision.md`
-- `SKILL_consistency_audit.md`
-- `SKILL_polish.md`
-- `SKILL_resume_orchestrator.md`
+- `agent/skills/revision-editor/SKILL.md`
+- `agent/skills/consistency-auditor/SKILL.md`
+- `agent/skills/prose-polisher/SKILL.md`
+- `agent/skills/resume-orchestrator/SKILL.md`
 
 ### Responsibility Split
 
-- `SKILL_novel.md` は新規執筆専用に絞る
-- 改稿は `SKILL_revision.md` に分離する
-- 整合性診断は `SKILL_consistency_audit.md` に分離する
-- 文体や密度の仕上げは `SKILL_polish.md` に分離する
-- セッション再開時の着手判断は `SKILL_resume_orchestrator.md` に分離する
+- `agent/skills/novel-writer/SKILL.md` は新規執筆専用に絞る
+- 改稿は `agent/skills/revision-editor/SKILL.md` に分離する
+- 整合性診断は `agent/skills/consistency-auditor/SKILL.md` に分離する
+- 文体や密度の仕上げは `agent/skills/prose-polisher/SKILL.md` に分離する
+- セッション再開時の着手判断は `agent/skills/resume-orchestrator/SKILL.md` に分離する
 
 ---
 
@@ -125,3 +125,4 @@
 - 文字数契約が `2000-2500` に統一されている（当時の成功条件。現行は `1000-1500`）
 - セッション再開時に、必要な文脈を失わずに作業を継続できる
 - テンプレートと評価系が、現在の長編運用に追随している
+

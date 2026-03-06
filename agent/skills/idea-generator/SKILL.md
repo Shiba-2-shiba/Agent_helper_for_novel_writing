@@ -1,7 +1,6 @@
 ---
 name: idea-generator
-description: Brainstorm new novel concepts, widen rough ideas, and shape them into a usable logline. Use when the user wants to create a new story from scratch or needs broad ideation before formal setting work.
-version: 0.2
+description: Brainstorm new novel concepts, widen rough ideas, and shape them into a usable logline. Use when the user wants to create a new story from scratch or needs broad ideation before formal setting work. 日本語トリガー例: 新しい小説案を出したい、企画を壁打ちしたいとき。
 ---
 
 # Purpose
@@ -39,11 +38,11 @@ version: 0.2
 
 - ログライン合意後、プロジェクト名を決める
 - 案件の箱を作る段階へ進める
-- その後は `SKILL_project_bootstrap.md` へ渡す
+- その後は `agent/skills/project-bootstrap/SKILL.md` へ渡す
 
 # Handoff
 
-- ログライン確定後: `SKILL_project_bootstrap.md`
+- ログライン確定後: `agent/skills/project-bootstrap/SKILL.md`
 
 # Outputs
 
@@ -56,3 +55,5 @@ version: 0.2
 - 6項目をまとめて質問しない
 - ユーザーの突飛な案を即否定しない
 - この段階で設定テンプレートの詳細記入まで進めない
+
+

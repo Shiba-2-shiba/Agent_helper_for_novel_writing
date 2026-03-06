@@ -123,7 +123,7 @@ Recommended fix:
 
 ### Best Next Skill
 
-- `SKILL_revision.md`
+- `agent/skills/revision-editor/SKILL.md`
 
 Reason:
 
@@ -146,3 +146,4 @@ Suggested revision goals:
 
 - Revisit `chapter_2_scene_1_restart.txt` after Chapter 5 is stabilized
 - That file is still an old unresolved draft and below the new minimum
+

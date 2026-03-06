@@ -14,8 +14,9 @@
 5. **state_schema_*.yaml** — プロジェクト固有の状態・制約・進捗を確認する
 6. **memory/global_notes.md** — このプロジェクト固有の不変情報を確認する
 7. **memory/session_notes.md** — 直近セッションの引き継ぎ事項を確認する
-8. **skills/SKILL_*.md** — 今のタスクに対応するスキル手順を確認する
+8. **skills/<skill-name>/SKILL.md** — 今のタスクに対応するスキル手順を確認する
 9. **memory/session_archive.md**（存在する場合） — 古い経緯が必要なときだけ参照する
+10. **skills/legacy/**（存在する場合） — 旧案件の移行や互換確認が必要なときだけ参照する
 
 ---
 
@@ -35,7 +36,7 @@
 | `decisions_log.md` | 重要な判断の履歴 | 重要決定のたびに追記 |
 | `change_log.md` | ファイル変更の履歴 | 変更のたびに追記 |
 | `evals/` | スキル出力品質の検証プロンプト | evalを実行するとき参照 |
-| `skills/SKILL_*.md` | カタログ固有のスキル手順（企画・初期化・設定・段取り・執筆・改稿・監査・推敲・再開） | タスク開始時に参照 |
+| `skills/<skill-name>/SKILL.md` | カタログ固有のスキル手順（企画・初期化・設定・段取り・執筆・改稿・監査・推敲・再開） | タスク開始時に参照 |
 
 ---
 
@@ -45,7 +46,7 @@
 - [ ] `state_schema_*.yaml` の進捗と文字数契約を確認
 - [ ] `global_notes.md` の文体契約と不変制約を確認
 - [ ] `session_notes.md` の次回着手点と未解決事項を確認
-- [ ] 今のタスクに対応する `skills/SKILL_*.md` を確認
+- [ ] 今のタスクに対応する `skills/<skill-name>/SKILL.md` を確認
 
 ### セッション終了時
 - [ ] `session_notes.md` を `compaction_policy.md` のルールに従って整理
@@ -71,3 +72,4 @@
 
 ## Selected Catalogs
 - novel
+

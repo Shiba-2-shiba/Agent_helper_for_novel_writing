@@ -52,19 +52,19 @@
 ### Tasks
 
 1. 既存スキルの責務を整理する。
-2. `SKILL_novel.md` を新規執筆専用へ絞る。
+2. `agent/skills/novel-writer/SKILL.md` を新規執筆専用へ絞る。
 3. 改稿、監査、仕上げ、再開の新スキルを追加する。
 4. 共通の記述項目を揃える。
 
 ### Files
 
-- `agent/skills/SKILL_idea_generation.md`
-- `agent/skills/SKILL_setting_creation.md`
-- `agent/skills/SKILL_novel.md`
-- `agent/skills/SKILL_revision.md`
-- `agent/skills/SKILL_consistency_audit.md`
-- `agent/skills/SKILL_polish.md`
-- `agent/skills/SKILL_resume_orchestrator.md`
+- `agent/skills/idea-generator/SKILL.md`
+- `agent/skills/setting-creator/SKILL.md`
+- `agent/skills/novel-writer/SKILL.md`
+- `agent/skills/revision-editor/SKILL.md`
+- `agent/skills/consistency-auditor/SKILL.md`
+- `agent/skills/prose-polisher/SKILL.md`
+- `agent/skills/resume-orchestrator/SKILL.md`
 
 ---
 
@@ -113,7 +113,7 @@
 ### Checkpoints
 
 - `HUB.md` から新しいスキルが選べる
-- `SKILL_novel.md` が `body.md` 前提で動かない
+- `agent/skills/novel-writer/SKILL.md` が `body.md` 前提で動かない
 - 文字数契約が全体で `2000-2500`（当時。現行は `1000-1500`）
 - `session_notes.md` の方針が Agent アプリ向けに更新されている
 - 依頼テンプレートが、改稿や監査を扱える
@@ -159,3 +159,5 @@
 
 - 旧案件移行は、必要時のみ `legacy_project_migration.md` を参照して対処する
 - ただし、今後の主要ブラッシュアップ対象ではない
+
+

@@ -15,6 +15,10 @@ import pytest
 # プロジェクトルート（tests/ の親）
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS_DIR  = os.path.join(PROJECT_ROOT, "scripts")
+if SCRIPTS_DIR not in sys.path:
+    sys.path.insert(0, SCRIPTS_DIR)
+
+from eval_skill_trigger_qa import route_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -267,13 +271,29 @@ class TestRuntimeRefactorScripts:
 
         outline = """# Outline
 
-## 第2章：承・前半（目標：約20,000字）
-> 仲間との出会いと小目標の達成。
+## 第1章 Chapter Card
+- 章の役割: 導入
+- 想定シーン数: 1
+- 想定最小字数: 1000
+- 想定目標字数: 1250
 
-シーン一覧:
-- [ ] シーン1（約1000〜1500字）: 主人公が新しい依頼を受ける
-- [ ] シーン2（約1000〜1500字）: 仲間と合流し最初の障害にぶつかる
-- [ ] シーン3（約1000〜1500字）: 障害を越えるために決断する
+### Scene Ledger
+| scene_id | scene_type | purpose | turn | payoff_or_seed | min | target | max | depends_on | status |
+|---|---|---|---|---|---:|---:|---:|---|---|
+| 1-1 | standard | 序盤の導入を置く | 平穏 -> 不穏 | 種まき | 1000 | 1250 | 1500 | - | planned |
+
+## 第2章 Chapter Card
+- 章の役割: 障害の提示
+- 想定シーン数: 3
+- 想定最小字数: 3000
+- 想定目標字数: 3750
+
+### Scene Ledger
+| scene_id | scene_type | purpose | turn | payoff_or_seed | min | target | max | depends_on | status |
+|---|---|---|---|---|---:|---:|---:|---|---|
+| 2-1 | standard | 主人公が新しい依頼を受ける | 日常 -> 予感 | 種まき | 1000 | 1250 | 1500 | 1-1 | planned |
+| 2-2 | standard | 仲間と合流し最初の障害にぶつかる | 警戒 -> 緊張 | 回収: 合流 / 種: 障害 | 1000 | 1250 | 1500 | 2-1 | planned |
+| 2-3 | standard | 障害を越えるために決断する | 逡巡 -> 決断 | 次章への推進力 | 1000 | 1250 | 1500 | 2-2 | planned |
 """
         (proj / "05_chapter_outline_100k.md").write_text(outline, encoding="utf-8")
 
@@ -293,7 +313,20 @@ class TestRuntimeRefactorScripts:
             encoding="utf-8",
         )
         state_schema = proj / "agent" / "state_schema_novel.yaml"
-        state_schema.write_text("narration_tense: 過去形\n", encoding="utf-8")
+        state_schema.write_text(
+            "targets:\n"
+            "  length_mode: long_form_100k\n"
+            "  planning_gate_min_chars: 3000\n"
+            "  planning_target_total_chars: 4000\n"
+            "active_work:\n"
+            "  planning_gate_status: ready\n"
+            "progress:\n"
+            "  planned_total_min_chars: 4000\n"
+            "  planned_total_target_chars: 5000\n"
+            "  planned_scene_count: 4\n"
+            "narration_tense: 過去形\n",
+            encoding="utf-8",
+        )
 
         (proj / "chapter_2_scene_1.txt").write_text(
             "主人公は市場で奇妙な依頼書を受け取り、胸騒ぎを覚えた。",
@@ -330,8 +363,14 @@ class TestRuntimeRefactorScripts:
             "scene_brief_compact.md",
             "continuity_pack.md",
             "request_compact.md",
+            "planning_gate_brief.md",
         ):
             assert os.path.isfile(os.path.join(runtime_dir, name)), f"Missing runtime file: {name}"
+
+        planning_gate_brief = open(os.path.join(runtime_dir, "planning_gate_brief.md"), "r", encoding="utf-8").read()
+        assert "Planning Gate: ready" in planning_gate_brief
+        assert "Planned Total Min Chars: 4000" in planning_gate_brief
+        assert "Next Planning Action:" in planning_gate_brief
 
         continuity = open(os.path.join(runtime_dir, "continuity_pack.md"), "r", encoding="utf-8").read()
         assert "chapter_2_scene_2.txt" in continuity
@@ -350,6 +389,7 @@ class TestRuntimeRefactorScripts:
         assert draft_prompt_result.returncode == 0, draft_prompt_result.stdout + draft_prompt_result.stderr
         assert "estimated_tokens=" in draft_prompt_result.stdout
         draft_prompt = open(os.path.join(runtime_dir, "draft_prompt.txt"), "r", encoding="utf-8").read()
+        assert "## Planning Gate Brief" in draft_prompt
         assert draft_prompt.rstrip().endswith("本文のみ出力")
 
         short_text_path = os.path.join(runtime_project, "draft_short.txt")
@@ -459,6 +499,41 @@ class TestRuntimeRefactorScripts:
         assert result.returncode == 1
         assert "ERROR:" in result.stdout
 
+    def test_build_draft_prompt_fails_when_planning_gate_is_blocked(self, tmp_path):
+        project_dir = tmp_path / "planning_blocked"
+        runtime_dir = project_dir / "runtime"
+        runtime_dir.mkdir(parents=True)
+        (runtime_dir / "style_contract_compact.md").write_text("# Style Contract Compact", encoding="utf-8")
+        (runtime_dir / "scene_brief_compact.md").write_text(
+            "# Scene Brief Compact\n"
+            "Scene Type: standard\n"
+            "Length Band: 1000 / 1250 / 1500\n"
+            "- Planning Gate: blocked\n",
+            encoding="utf-8",
+        )
+        (runtime_dir / "continuity_pack.md").write_text("# Continuity Pack", encoding="utf-8")
+        (runtime_dir / "request_compact.md").write_text(
+            "# Request Compact\n"
+            "- Length Mode: long_form_100k\n"
+            "- Planning Gate: blocked\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_draft_prompt.py"),
+                "--project",
+                str(project_dir),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 1
+        assert "planning_gate_status is not ready" in result.stdout
+        assert not os.path.exists(os.path.join(runtime_dir, "draft_prompt.txt"))
+
     def test_build_runtime_context_resume_mode_generates_resume_brief(self, runtime_project):
         result = subprocess.run(
             [
@@ -482,17 +557,24 @@ class TestRuntimeRefactorScripts:
         resume_path = os.path.join(runtime_dir, "resume_brief.md")
         request_path = os.path.join(runtime_dir, "request_compact.md")
         style_path = os.path.join(runtime_dir, "style_contract_compact.md")
+        planning_gate_path = os.path.join(runtime_dir, "planning_gate_brief.md")
         scene_brief_path = os.path.join(runtime_dir, "scene_brief_compact.md")
 
         assert os.path.isfile(style_path)
         assert os.path.isfile(request_path)
+        assert os.path.isfile(planning_gate_path)
         assert os.path.isfile(resume_path)
         assert not os.path.exists(scene_brief_path)
 
         resume_text = open(resume_path, "r", encoding="utf-8").read()
         assert "Current Position:" in resume_text
+        assert "runtime/planning_gate_brief.md" in resume_text
         assert "agent/memory/session_notes.md" in resume_text
         assert "chapter_2_scene_2.txt" in resume_text
+
+    def test_route_prompt_prefers_setting_creator_for_blocked_planning_gate(self):
+        prompt = "long_form_100k の planning gate が blocked なので scene inventory を増やしたい。"
+        assert route_prompt(prompt) == "setting-creator"
 
     def test_check_scene_output_does_not_flag_plain_ai_word_as_meta(self, tmp_path):
         project_dir = tmp_path / "ai_safe_case"
@@ -649,3 +731,222 @@ class TestRuntimeRefactorScripts:
         )
         assert result.returncode == 1
         assert "ERROR: ANCHOR does not match paragraph P1" in result.stdout
+
+
+# ---------------------------------------------------------------------------
+# eval_skill_trigger_qa.py のテスト
+# ---------------------------------------------------------------------------
+
+class TestEvalSkillTriggerQA:
+    """eval_skill_trigger_qa.py の動作検証"""
+
+    def test_evaluates_dataset_and_writes_reports(self, tmp_path):
+        dataset = tmp_path / "trigger.md"
+        json_out = tmp_path / "report.json"
+        md_out = tmp_path / "report.md"
+        dataset.write_text(
+            "# Trigger QA\n\n"
+            "## idea-generator\n"
+            "### should-trigger\n"
+            "- 新しい小説のネタ出しをしたい。\n"
+            "### should-not-trigger\n"
+            "- どこから再開すべき？\n\n"
+            "## resume-orchestrator\n"
+            "### should-trigger\n"
+            "- どこから再開すべき？\n"
+            "### should-not-trigger\n"
+            "- アイディアを壁打ちしたい。\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "eval_skill_trigger_qa.py"),
+                "--input",
+                str(dataset),
+                "--json_out",
+                str(json_out),
+                "--md_out",
+                str(md_out),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json_out.exists()
+        assert md_out.exists()
+        report = json.load(open(json_out, "r", encoding="utf-8"))
+        assert report["summary"]["skills_covered"] == 2
+        assert report["summary"]["total_should_trigger"] == 2
+        assert report["summary"]["total_should_not_trigger"] == 2
+
+    def test_fails_when_input_file_is_missing(self, tmp_path):
+        json_out = tmp_path / "report.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "eval_skill_trigger_qa.py"),
+                "--input",
+                str(tmp_path / "missing.md"),
+                "--json_out",
+                str(json_out),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "ERROR: input file not found" in result.stdout
+
+
+class TestEvalSkillRegressionMinimum:
+    """eval_skill_regression_minimum.py の動作検証"""
+
+    def test_evaluates_minimum_regression_and_writes_reports(self, tmp_path):
+        dataset = tmp_path / "regression.md"
+        json_out = tmp_path / "regression.json"
+        md_out = tmp_path / "regression.md.out"
+        dataset.write_text(
+            "# Regression\n\n"
+            "## 1. idea-generator\n"
+            "- Input: 新しい小説のネタ出しをしたい。\n"
+            "- Expected: アイディア提案を返す。\n\n"
+            "## 2. resume-orchestrator\n"
+            "- Input: どこから再開すべき？\n"
+            "- Expected: 次アクションを1つ返す。\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "eval_skill_regression_minimum.py"),
+                "--input",
+                str(dataset),
+                "--json_out",
+                str(json_out),
+                "--md_out",
+                str(md_out),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.load(open(json_out, "r", encoding="utf-8"))
+        assert report["summary"]["total_cases"] == 2
+        assert report["summary"]["passed_cases"] == 2
+        assert report["summary"]["skills_covered"] == 2
+        assert len(report["summary"]["missing_required_skills"]) == 7
+
+    def test_fails_when_regression_input_is_missing(self, tmp_path):
+        json_out = tmp_path / "regression.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "eval_skill_regression_minimum.py"),
+                "--input",
+                str(tmp_path / "missing.md"),
+                "--json_out",
+                str(json_out),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "ERROR: input file not found" in result.stdout
+
+
+class TestRunSkillEvalSuite:
+    """run_skill_eval_suite.py の動作検証"""
+
+    def test_runs_suite_and_writes_summary(self, tmp_path):
+        trigger_input = tmp_path / "trigger.md"
+        min_input = tmp_path / "reg_min.md"
+        boundary_input = tmp_path / "reg_boundary.md"
+
+        trigger_input.write_text(
+            "## idea-generator\n"
+            "### should-trigger\n"
+            "- 新しい小説のネタ出しをしたい。\n"
+            "### should-not-trigger\n"
+            "- どこから再開すべき？\n\n"
+            "## resume-orchestrator\n"
+            "### should-trigger\n"
+            "- どこから再開すべき？\n"
+            "### should-not-trigger\n"
+            "- アイディアを壁打ちしたい。\n",
+            encoding="utf-8",
+        )
+        min_input.write_text(
+            "## 1. idea-generator\n"
+            "- Input: 新しい小説のネタ出しをしたい。\n"
+            "- Expected: 発想を広げる。\n\n"
+            "## 2. resume-orchestrator\n"
+            "- Input: どこから再開すべき？\n"
+            "- Expected: 再開判断を返す。\n",
+            encoding="utf-8",
+        )
+        boundary_input.write_text(min_input.read_text(encoding="utf-8"), encoding="utf-8")
+
+        trigger_json = tmp_path / "trigger.json"
+        trigger_md = tmp_path / "trigger.md.out"
+        reg_min_json = tmp_path / "reg_min.json"
+        reg_min_md = tmp_path / "reg_min.md.out"
+        reg_boundary_json = tmp_path / "reg_boundary.json"
+        reg_boundary_md = tmp_path / "reg_boundary.md.out"
+        suite_json = tmp_path / "suite.json"
+        suite_md = tmp_path / "suite.md"
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "run_skill_eval_suite.py"),
+                "--trigger_input",
+                str(trigger_input),
+                "--regression_min_input",
+                str(min_input),
+                "--regression_boundary_input",
+                str(boundary_input),
+                "--trigger_json_out",
+                str(trigger_json),
+                "--trigger_md_out",
+                str(trigger_md),
+                "--regression_min_json_out",
+                str(reg_min_json),
+                "--regression_min_md_out",
+                str(reg_min_md),
+                "--regression_boundary_json_out",
+                str(reg_boundary_json),
+                "--regression_boundary_md_out",
+                str(reg_boundary_md),
+                "--suite_json_out",
+                str(suite_json),
+                "--suite_md_out",
+                str(suite_md),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        summary = json.load(open(suite_json, "r", encoding="utf-8"))
+        assert "overall_pass" in summary
+        assert "trigger" in summary
+        assert "regression_minimum" in summary
+        assert "regression_boundary" in summary
+
+    def test_fails_when_suite_inputs_are_missing(self, tmp_path):
+        suite_json = tmp_path / "suite.json"
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "run_skill_eval_suite.py"),
+                "--trigger_input",
+                str(tmp_path / "missing_trigger.md"),
+                "--suite_json_out",
+                str(suite_json),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "ERROR: trigger QA run failed" in result.stdout

@@ -1,7 +1,6 @@
 ---
 name: prose-polisher
-description: Improve readability, tone consistency, density, and endings after the structure is already sound. Use when the user wants polishing rather than structural rewriting or diagnosis.
-version: 0.1
+description: Improve readability, tone consistency, density, and endings after the structure is already sound. Use when the user wants polishing rather than structural rewriting or diagnosis. 日本語トリガー例: 文体を整えて、読みやすく仕上げたいとき。
 ---
 
 # Purpose
@@ -42,8 +41,8 @@ version: 0.1
 
 # Handoff
 
-- 構造問題が見つかった: `SKILL_consistency_audit.md`
-- 大きく書き直す必要がある: `SKILL_revision.md`
+- 構造問題が見つかった: `agent/skills/consistency-auditor/SKILL.md`
+- 大きく書き直す必要がある: `agent/skills/revision-editor/SKILL.md`
 
 # Outputs
 
@@ -55,3 +54,5 @@ version: 0.1
 - 章構成まで変えない
 - キャラ解釈を勝手に変えない
 - 表現整理の範囲を超えて大規模改稿しない
+
+

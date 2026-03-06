@@ -140,7 +140,7 @@ def parse_scene_reference(scene_raw):
 
 
 def extract_chapter_block(outline_text, chapter_num):
-    pattern = rf"(?ms)^##\s*第{chapter_num}章[^\n]*\n.*?(?=^##\s*第\d+章|\Z)"
+    pattern = rf"(?ms)^#{{1,6}}\s*第{chapter_num}章[^\n]*\n.*?(?=^#{{1,6}}\s*第\d+章|\Z)"
     match = re.search(pattern, outline_text)
     if match:
         return match.group(0).strip()
@@ -150,18 +150,278 @@ def extract_chapter_block(outline_text, chapter_num):
 def parse_chapter_target_chars(chapter_block):
     if not chapter_block:
         return 0
+    chapter_card_target = extract_chapter_card_value(chapter_block, "想定目標字数")
+    parsed_target = _parse_int_from_text(chapter_card_target)
+    if parsed_target:
+        return parsed_target
     match = re.search(r"目標[:：]\s*約?\s*([\d,]+)\s*字", chapter_block)
     if not match:
         return 0
     return int(match.group(1).replace(",", ""))
 
 
+def extract_chapter_card_value(chapter_block, label):
+    if not chapter_block:
+        return ""
+    pattern = rf"(?m)^\s*-\s*{re.escape(label)}:\s*(.*)$"
+    match = re.search(pattern, chapter_block)
+    if not match:
+        return ""
+    return match.group(1).strip()
+
+
+def _parse_int_from_text(raw_text):
+    if not raw_text:
+        return 0
+    match = re.search(r"([\d,]+)", raw_text)
+    if not match:
+        return 0
+    return int(match.group(1).replace(",", ""))
+
+
+def _split_markdown_table_row(line):
+    stripped = line.strip()
+    if not stripped.startswith("|") or not stripped.endswith("|"):
+        return []
+    return [cell.strip() for cell in stripped.strip("|").split("|")]
+
+
+def _normalize_scene_id(raw_scene_id, default_chapter=None):
+    if not raw_scene_id:
+        return None
+    cleaned = raw_scene_id.strip()
+    match = re.fullmatch(r"(\d+)-(\d+)", cleaned)
+    if match:
+        return {
+            "chapter": int(match.group(1)),
+            "scene": int(match.group(2)),
+            "canonical_id": f"{int(match.group(1))}-{int(match.group(2))}",
+        }
+    match = re.fullmatch(r"(\d+)", cleaned)
+    if match and default_chapter is not None:
+        return {
+            "chapter": int(default_chapter),
+            "scene": int(match.group(1)),
+            "canonical_id": f"{int(default_chapter)}-{int(match.group(1))}",
+        }
+    return None
+
+
+def parse_scene_ledger(chapter_block):
+    if not chapter_block:
+        return []
+
+    chapter_heading = re.search(r"(?m)^#{1,6}\s*第(\d+)章", chapter_block)
+    default_chapter = int(chapter_heading.group(1)) if chapter_heading else None
+    lines = chapter_block.splitlines()
+    in_ledger = False
+    header_cells = []
+    rows = []
+
+    for index, line in enumerate(lines):
+        stripped = line.strip()
+        if stripped.startswith("### Scene Ledger"):
+            in_ledger = True
+            header_cells = []
+            continue
+        if not in_ledger:
+            continue
+        if not stripped:
+            if header_cells:
+                break
+            continue
+        if stripped.startswith("### ") and not stripped.startswith("### Scene Ledger"):
+            break
+        if stripped.startswith("## ") and not stripped.startswith("## 第"):
+            break
+        if stripped.startswith("|---"):
+            continue
+        if stripped.startswith("|"):
+            cells = _split_markdown_table_row(line)
+            if not header_cells:
+                header_cells = cells
+                continue
+            if not cells or len(cells) != len(header_cells):
+                continue
+            entry = dict(zip(header_cells, cells))
+            scene_ref = _normalize_scene_id(entry.get("scene_id", ""), default_chapter=default_chapter)
+            rows.append(
+                {
+                    "scene_id": entry.get("scene_id", "").strip(),
+                    "chapter": scene_ref["chapter"] if scene_ref else default_chapter or 0,
+                    "scene": scene_ref["scene"] if scene_ref else 0,
+                    "canonical_id": scene_ref["canonical_id"] if scene_ref else "",
+                    "scene_type": entry.get("scene_type", "").strip(),
+                    "purpose": entry.get("purpose", "").strip(),
+                    "turn": entry.get("turn", "").strip(),
+                    "payoff_or_seed": entry.get("payoff_or_seed", "").strip(),
+                    "min_chars": _parse_int_from_text(entry.get("min", "")),
+                    "target_chars": _parse_int_from_text(entry.get("target", "")),
+                    "max_chars": _parse_int_from_text(entry.get("max", "")),
+                    "depends_on": entry.get("depends_on", "").strip(),
+                    "status": entry.get("status", "").strip().lower(),
+                    "row_index": len(rows),
+                }
+            )
+            continue
+        if header_cells:
+            break
+
+    return rows
+
+
+def find_scene_ledger_entry(chapter_block, scene_num, chapter_num=None):
+    for entry in parse_scene_ledger(chapter_block):
+        if chapter_num is not None and entry["chapter"] not in (0, chapter_num):
+            continue
+        if entry["scene"] == scene_num:
+            return entry
+    return None
+
+
+def compute_planned_totals(outline_text):
+    chapter_numbers = sorted({int(match.group(1)) for match in re.finditer(r"(?m)^#{1,6}\s*第(\d+)章", outline_text)})
+    totals = {
+        "planned_scene_count": 0,
+        "planned_total_min_chars": 0,
+        "planned_total_target_chars": 0,
+        "planned_total_max_chars": 0,
+        "chapter_planned_chars": {},
+        "chapter_scene_counts": {},
+    }
+
+    for chapter_num in chapter_numbers:
+        chapter_block = extract_chapter_block(outline_text, chapter_num)
+        if not chapter_block:
+            continue
+        rows = parse_scene_ledger(chapter_block)
+        chapter_target = parse_chapter_target_chars(chapter_block)
+        if not chapter_target and rows:
+            chapter_target = sum(row["target_chars"] for row in rows if row["target_chars"] > 0)
+
+        totals["planned_scene_count"] += len(rows)
+        totals["planned_total_min_chars"] += sum(row["min_chars"] for row in rows if row["min_chars"] > 0)
+        totals["planned_total_target_chars"] += sum(row["target_chars"] for row in rows if row["target_chars"] > 0)
+        totals["planned_total_max_chars"] += sum(row["max_chars"] for row in rows if row["max_chars"] > 0)
+        if rows:
+            totals["chapter_scene_counts"][str(chapter_num)] = len(rows)
+        if chapter_target:
+            totals["chapter_planned_chars"][str(chapter_num)] = chapter_target
+
+    return totals
+
+
+def _extract_state_schema_text(project_dir):
+    state_schema_path = _find_first_existing(
+        os.path.join(project_dir, "agent", "state_schema_novel.yaml"),
+        os.path.join(project_dir, "state_schema_novel.yaml"),
+        os.path.join(project_dir, "state", "state_schema_novel.yaml"),
+    )
+    if state_schema_path is None:
+        return ""
+    return read_text_file(state_schema_path)
+
+
+def _extract_state_scalar(text, key, default_value=""):
+    if not text:
+        return default_value
+    pattern = rf"(?m)^\s*{re.escape(key)}:\s*(.+?)\s*(?:#.*)?$"
+    match = re.search(pattern, text)
+    if not match:
+        return default_value
+    return match.group(1).strip().strip('"').strip("'")
+
+
+def _parse_scene_type_bands_from_state(state_schema_text):
+    if not state_schema_text:
+        return {}
+
+    lines = state_schema_text.splitlines()
+    in_section = False
+    current_band = ""
+    current_indent = 0
+    bands = {}
+
+    for line in lines:
+        if not in_section:
+            if re.match(r"^\s*scene_type_bands:\s*$", line):
+                in_section = True
+            continue
+
+        if not line.strip():
+            continue
+
+        indent = len(line) - len(line.lstrip(" "))
+        stripped = line.strip()
+
+        if indent <= 2 and not stripped.startswith("#"):
+            break
+
+        if indent == 4 and stripped.endswith(":"):
+            current_band = stripped[:-1].strip()
+            bands[current_band] = {}
+            current_indent = indent
+            continue
+
+        if current_band and indent > current_indent and ":" in stripped:
+            key, value = stripped.split(":", 1)
+            bands[current_band][key.strip()] = _parse_int_from_text(value.strip())
+
+    return bands
+
+
+def load_planning_metadata(project_dir):
+    state_schema_text = _extract_state_schema_text(project_dir)
+    return {
+        "state_schema_text": state_schema_text,
+        "length_mode": _extract_state_scalar(state_schema_text, "length_mode", "standard"),
+        "planning_gate_status": _extract_state_scalar(state_schema_text, "planning_gate_status", ""),
+        "planning_gate_min_chars": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planning_gate_min_chars", "0")),
+        "planning_target_total_chars": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planning_target_total_chars", "0")),
+        "planned_total_min_chars": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planned_total_min_chars", "0")),
+        "planned_total_target_chars": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planned_total_target_chars", "0")),
+        "planned_scene_count": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planned_scene_count", "0")),
+        "scene_type_bands": _parse_scene_type_bands_from_state(state_schema_text),
+    }
+
+
+def resolve_scene_type_band(scene_type, project_dir="", state_schema_text="", min_chars=DEFAULT_MIN_CHARS, target_chars=DEFAULT_TARGET_CHARS, max_chars=DEFAULT_MAX_CHARS):
+    if not state_schema_text and project_dir:
+        state_schema_text = _extract_state_schema_text(project_dir)
+
+    bands = _parse_scene_type_bands_from_state(state_schema_text)
+    if scene_type and scene_type in bands:
+        band = bands[scene_type]
+        return {
+            "scene_type": scene_type,
+            "min": band.get("min", min_chars),
+            "target": band.get("target", target_chars),
+            "max": band.get("max", max_chars),
+        }
+
+    fallback_type = scene_type or "default"
+    return {
+        "scene_type": fallback_type,
+        "min": min_chars,
+        "target": target_chars,
+        "max": max_chars,
+    }
+
+
 def extract_scene_description(chapter_block, scene_num):
     if not chapter_block:
         return ""
 
+    ledger_entry = find_scene_ledger_entry(chapter_block, scene_num)
+    if ledger_entry and ledger_entry["purpose"]:
+        return ledger_entry["purpose"]
+
     pattern = rf"^\s*-\s*\[[ xX]?\]\s*シーン{scene_num}(?:（[^）]*）)?\s*:\s*(.*)$"
     match = re.search(pattern, chapter_block, re.MULTILINE)
+    if match:
+        return match.group(1).strip()
+    heading_pattern = rf"^#{{1,6}}\s*シーン{scene_num}(?:（[^）]*）)?\s*[：:]\s*(.*)$"
+    match = re.search(heading_pattern, chapter_block, re.MULTILINE)
     if match:
         return match.group(1).strip()
     return ""
@@ -205,6 +465,15 @@ def _collect_scene_metadata(project_dir):
                 }
 
     return sorted(found.values(), key=lambda item: (item["chapter"], item["scene"], item["path"]))
+
+
+def count_chapter_written_chars(project_dir, chapter_num):
+    total_chars = 0
+    for item in _collect_scene_metadata(project_dir):
+        if item["chapter"] != chapter_num:
+            continue
+        total_chars += len(read_text_file(item["path"]))
+    return total_chars
 
 
 def _match_scene_tuple(path):
@@ -304,6 +573,7 @@ def build_style_contract(project_dir, min_chars=DEFAULT_MIN_CHARS, target_chars=
     )
     state_schema_path = _find_first_existing(
         os.path.join(project_dir, "agent", "state_schema_novel.yaml"),
+        os.path.join(project_dir, "state_schema_novel.yaml"),
         os.path.join(project_dir, "state", "state_schema_novel.yaml"),
     )
 

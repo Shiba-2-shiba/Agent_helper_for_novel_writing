@@ -1,7 +1,6 @@
 ---
 name: novel-writer
-description: Draft new scene prose for an existing novel project. Use when the user wants a fresh scene or continuation written, not when they mainly want diagnosis, revision, or polish.
-version: 0.5
+description: Draft new scene prose for an existing novel project. Use when the user wants a fresh scene or continuation written, not when they mainly want diagnosis, revision, or polish. 日本語トリガー例: 第X章Yシーンを書いて、続きを執筆したいとき。
 ---
 
 # Purpose
@@ -13,6 +12,7 @@ version: 0.5
 - `agent/HUB.md`
 - 対象プロジェクトの `runtime/draft_prompt.txt`（あれば最優先）
 - `runtime/draft_prompt.txt` がない場合は `runtime/style_contract_compact.md`
+- 対象プロジェクトの `runtime/planning_gate_brief.md`（あれば gate 状態の確認を優先）
 - `runtime/scene_brief_compact.md`
 - `runtime/continuity_pack.md`
 - `runtime/request_compact.md`
@@ -28,6 +28,8 @@ version: 0.5
 - `chapter`
 - `scene`
 - 必要なら `length_contract`
+- 必要なら `scene_type`
+- 必要なら `length_band`
 - 必要なら既存の対象シーン `txt` の有無
 
 # Procedure
@@ -38,12 +40,15 @@ version: 0.5
 - `runtime/draft_prompt.txt` がない、または `runtime/` の必須ファイルが欠けている場合は、先に以下を実行して更新する
 - `python scripts/build_runtime_context.py --project <project_path> --chapter <chapter> --scene <scene> --mode draft`
 - `python scripts/build_draft_prompt.py --project <project_path>`
+- `request_compact.md` または `scene_brief_compact.md` に `Planning Gate: blocked` がある場合は、本文執筆へ進まず `setting-creator` へ戻す
 - `runtime/` が使えない場合のみ、従来の広い文脈参照へフォールバックする
 
 ## 2. 文脈を集める
 
 - まず `runtime/draft_prompt.txt` を読み、そこに含まれる制約を優先する
 - `runtime/draft_prompt.txt` がなければ、`runtime/style_contract_compact.md`、`runtime/scene_brief_compact.md`、`runtime/continuity_pack.md`、`runtime/request_compact.md` を読む
+- `runtime/planning_gate_brief.md` がある場合は、`Planning Gate` が `ready` かを本文執筆前に確認する
+- `runtime/scene_brief_compact.md` に `Scene Type` と `Length Band` がある場合は、それを文字数契約の正本として扱う
 - `runtime/` に不足がある場合のみ、対象シーンの章プロット、文体契約、進捗を補助参照する
 - `runtime/continuity_pack.md` を優先し、直前シーンの感情、位置関係、会話温度を引き継ぐ
 - 章の方針変更がある場合のみ `body.md` を確認する
@@ -51,7 +56,10 @@ version: 0.5
 ## 3. 初稿を書く
 
 - 指定シーンの本文を新規に執筆する
-- 1シーン `1000-1500` を守る
+- `Length Band` がある場合は、その `min / target / max` を守る
+- `bridge` は接続と整理を優先し、無理に膨らませない
+- `standard` は通常の前進シーンとして、目的と抵抗を明確に保つ
+- `anchor` / `climax` は感情変化、対立、決断、回収を厚くする
 - 地の文、会話、内面描写の比率が偏りすぎないようにする
 - 次シーンへつながる未解決要素を残す
 
@@ -68,11 +76,13 @@ version: 0.5
 
 保存前または再保存前に以下を確認する。
 
-- 文字数が `1000-1500`
+- 文字数が対象シーンの `Length Band` に収まっている、または少なくとも `min` 未満ではない
 - 視点がぶれていない
 - 主要キャラの口調が契約から外れていない
 - シーンの目的が達成されている
 - 本文中に見出し、箇条書き、メタ発言がない
+
+`runtime/scene_brief_compact.md` に `Length Band` がない場合のみ、旧基準の `length_contract` または `1000-1500` をフォールバックとして使う。
 
 基準を満たさない場合は、最大 3 回まで自律的に修正する。
 
@@ -84,20 +94,25 @@ version: 0.5
 
 # Handoff
 
-- 設定やプロットの前提変更が必要: `SKILL_setting_creation.md`
-- 既存シーンの修正が主目的になった: `SKILL_revision.md`
-- 診断が必要: `SKILL_consistency_audit.md`
+- 設定やプロットの前提変更が必要: `agent/skills/setting-creator/SKILL.md`
+- 既存シーンの修正が主目的になった: `agent/skills/revision-editor/SKILL.md`
+- 診断が必要: `agent/skills/consistency-auditor/SKILL.md`
 
 # Outputs
 
 - 新規シーン初稿
 - `runtime/check_report.json` による文字数チェック結果
+- 必要なら `scene_type` と `length_band` に対する短い自己評価メモ
 - 必要なら短い自己評価メモ
 
 # Do Not
 
 - 既存の `body.md` を本文集約先として使わない
 - 改稿や監査の責務を抱え込まない
+- `long_form_100k` で `planning_gate_status != ready` のまま初稿を書き始めない
 - 文字数不足のまま完成扱いにしない
+- `runtime/scene_brief_compact.md` の `Length Band` があるのに、旧固定値だけで自己判定しない
 - 毎回フル文脈を読み直してクレジットを無駄に消費しない
 - `needs_expand=true` なのに全面再生成へ戻らない
+
+

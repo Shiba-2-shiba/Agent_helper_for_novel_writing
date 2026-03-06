@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import sys
 
 from prompt_utils import (
@@ -9,6 +10,7 @@ from prompt_utils import (
     RUNTIME_PROMPT_WARN_LIMIT,
     UserFacingError,
     estimate_tokens,
+    read_optional_text,
     require_existing_file,
     read_text_file,
     resolve_project_path,
@@ -16,6 +18,37 @@ from prompt_utils import (
     validate_char_bounds,
     write_text_file,
 )
+
+
+def parse_scene_brief_metadata(scene_brief):
+    scene_type_match = re.search(r"(?m)^Scene Type:\s*(.+)$", scene_brief)
+    length_band_match = re.search(r"(?m)^Length Band:\s*(\d+)\s*/\s*(\d+)\s*/\s*(\d+)$", scene_brief)
+
+    metadata = {
+        "scene_type": scene_type_match.group(1).strip() if scene_type_match else "",
+        "min_chars": 0,
+        "target_chars": 0,
+        "max_chars": 0,
+    }
+    if length_band_match:
+        metadata["min_chars"] = int(length_band_match.group(1))
+        metadata["target_chars"] = int(length_band_match.group(2))
+        metadata["max_chars"] = int(length_band_match.group(3))
+    return metadata
+
+
+def parse_request_compact_metadata(request_compact):
+    planning_gate_match = re.search(r"(?m)^- Planning Gate:\s*(.+)$", request_compact)
+    return {
+        "planning_gate_status": planning_gate_match.group(1).strip().lower() if planning_gate_match else "",
+    }
+
+
+def parse_planning_gate_brief_metadata(planning_gate_brief):
+    planning_gate_match = re.search(r"(?m)^Planning Gate:\s*(.+)$", planning_gate_brief)
+    return {
+        "planning_gate_status": planning_gate_match.group(1).strip().lower() if planning_gate_match else "",
+    }
 
 
 def main():
@@ -46,6 +79,22 @@ def main():
     scene_brief = read_text_file(brief_path).strip()
     continuity_pack = read_text_file(continuity_path).strip()
     request_compact = read_text_file(request_path).strip()
+    planning_gate_brief = read_optional_text(os.path.join(runtime_dir, "planning_gate_brief.md")).strip()
+    scene_brief_meta = parse_scene_brief_metadata(scene_brief)
+    request_meta = parse_request_compact_metadata(request_compact)
+    planning_gate_meta = parse_planning_gate_brief_metadata(planning_gate_brief)
+
+    planning_gate_status = planning_gate_meta["planning_gate_status"] or request_meta["planning_gate_status"]
+    if planning_gate_status and planning_gate_status not in {"ready", "unknown"}:
+        raise UserFacingError(
+            "planning_gate_status is not ready; complete long-form planning before generating draft_prompt.txt"
+        )
+
+    effective_min = scene_brief_meta["min_chars"] or args.min_chars
+    effective_target = scene_brief_meta["target_chars"] or args.target_chars
+    effective_max = scene_brief_meta["max_chars"] or args.max_chars
+    validate_char_bounds(effective_min, effective_target, effective_max)
+    scene_type = scene_brief_meta["scene_type"] or "default"
 
     prompt = "\n\n".join(
         [
@@ -59,11 +108,19 @@ def main():
             continuity_pack,
             "## Request Compact",
             request_compact,
+            *(
+                ["## Planning Gate Brief", planning_gate_brief]
+                if planning_gate_brief
+                else []
+            ),
             "## Output Contract",
-            f"- 目安文字数: {args.min_chars} / {args.target_chars} / {args.max_chars} 字（min/target/max）",
+            f"- Scene Type: {scene_type}",
+            f"- 目安文字数: {effective_min} / {effective_target} / {effective_max} 字（min/target/max）",
             "- 初稿は1回目の骨格生成として扱う",
-            "- 最低文字数未達でも失敗扱いにしない",
+            "- 文字数が min 未満なら、後段で expand 候補として扱われる",
             "- ただし構造・文体・前後接続を優先する",
+            "- bridge シーンは無理に膨らませない",
+            "- anchor / climax シーンは感情変化と意思決定を厚くする",
             "- 本文のみ出力",
         ]
     )
@@ -73,6 +130,7 @@ def main():
         "scene_brief": estimate_tokens(scene_brief),
         "continuity_pack": estimate_tokens(continuity_pack),
         "request_compact": estimate_tokens(request_compact),
+        "planning_gate_brief": estimate_tokens(planning_gate_brief),
     }
 
     output_path = os.path.join(runtime_dir, "draft_prompt.txt")

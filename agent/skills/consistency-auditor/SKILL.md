@@ -1,7 +1,6 @@
 ---
 name: consistency-auditor
-description: Diagnose plot, setting, pacing, continuity, and style issues without defaulting to immediate rewriting. Use when the user wants critique, contradiction checks, weak-point analysis, or risk identification.
-version: 0.1
+description: Diagnose plot, setting, pacing, continuity, and style issues without defaulting to immediate rewriting. Use when the user wants critique, contradiction checks, weak-point analysis, or risk identification. 日本語トリガー例: 設定矛盾チェック、整合性監査、違和感診断をしたいとき。
 ---
 
 # Purpose
@@ -48,15 +47,15 @@ version: 0.1
 
 ## 4. 修正先を提案する
 
-- 設定修正が必要なら `SKILL_setting_creation.md`
-- 本文改稿で足りるなら `SKILL_revision.md`
-- 文体調整だけなら `SKILL_polish.md`
+- 設定修正が必要なら `agent/skills/setting-creator/SKILL.md`
+- 本文改稿で足りるなら `agent/skills/revision-editor/SKILL.md`
+- 文体調整だけなら `agent/skills/prose-polisher/SKILL.md`
 
 # Handoff
 
-- 設定修正: `SKILL_setting_creation.md`
-- 本文改稿: `SKILL_revision.md`
-- 仕上げ調整: `SKILL_polish.md`
+- 設定修正: `agent/skills/setting-creator/SKILL.md`
+- 本文改稿: `agent/skills/revision-editor/SKILL.md`
+- 仕上げ調整: `agent/skills/prose-polisher/SKILL.md`
 
 # Outputs
 
@@ -69,3 +68,5 @@ version: 0.1
 - 診断と改稿を同時に進めない
 - 問題点を抽象論だけで済ませない
 - 影響範囲を示さずに重大判定しない
+
+

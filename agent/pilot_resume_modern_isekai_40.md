@@ -77,7 +77,7 @@
 
 ### Primary
 
-- `SKILL_consistency_audit.md`
+- `agent/skills/consistency-auditor/SKILL.md`
 
 理由:
 
@@ -87,7 +87,7 @@
 
 ### Secondary
 
-- `SKILL_revision.md`
+- `agent/skills/revision-editor/SKILL.md`
 
 使う条件:
 
@@ -112,3 +112,4 @@
 - `body.md` が本文集約されていない点は、新しいルールに合致している
 - 現在の課題は「ファイル不足」ではなく、「Backlog 状態と現本文の整合確認」
 - 再開スキルのパイロット対象としては適切
+

@@ -19,16 +19,16 @@
 
 ## Phase 3: Skills
 
-- [x] `SKILL_idea_generation.md` を新構成に寄せる
-- [x] `SKILL_setting_creation.md` を新構成に寄せる
-- [x] `SKILL_project_bootstrap.md` を追加する
-- [x] `SKILL_scene_planning.md` を追加する
-- [x] `SKILL_novel.md` を新規執筆専用へ再定義する
-- [x] `SKILL_revision.md` を追加する
-- [x] `SKILL_consistency_audit.md` を追加する
-- [x] `SKILL_polish.md` を追加する
-- [x] `SKILL_resume_orchestrator.md` を追加する
-- [x] `SKILL_setting_creation.md` から執筆直前の段取り責務を分離する
+- [x] `agent/skills/idea-generator/SKILL.md` を新構成に寄せる
+- [x] `agent/skills/setting-creator/SKILL.md` を新構成に寄せる
+- [x] `agent/skills/project-bootstrap/SKILL.md` を追加する
+- [x] `agent/skills/scene-planner/SKILL.md` を追加する
+- [x] `agent/skills/novel-writer/SKILL.md` を新規執筆専用へ再定義する
+- [x] `agent/skills/revision-editor/SKILL.md` を追加する
+- [x] `agent/skills/consistency-auditor/SKILL.md` を追加する
+- [x] `agent/skills/prose-polisher/SKILL.md` を追加する
+- [x] `agent/skills/resume-orchestrator/SKILL.md` を追加する
+- [x] `agent/skills/setting-creator/SKILL.md` から執筆直前の段取り責務を分離する
 
 ## Phase 4: Templates and Evals
 
@@ -69,8 +69,8 @@
 ## Phase 7: Runtime-First Integration
 
 - [x] `HUB.md` を新規執筆・再開整理で `runtime-first` 優先へ更新する
-- [x] `SKILL_novel.md` を `runtime-first` の執筆・機械チェック・拡張フローへ更新する
-- [x] `SKILL_resume_orchestrator.md` を `runtime/resume_brief.md` 優先へ更新する
+- [x] `agent/skills/novel-writer/SKILL.md` を `runtime-first` の執筆・機械チェック・拡張フローへ更新する
+- [x] `agent/skills/resume-orchestrator/SKILL.md` を `runtime/resume_brief.md` 優先へ更新する
 - [x] `README.md` の Antigravity 運用説明を `runtime-first` に同期する
 - [x] `scripts/` に runtime 系スクリプト一式を追加する
 - [x] `小説作成/scripts/` に runtime 系スクリプト一式を同期する
@@ -81,3 +81,4 @@
 ## Legacy Projects (Low Priority)
 
 - [x] 必要時のみ参照する旧案件移行ルールを定義する
+

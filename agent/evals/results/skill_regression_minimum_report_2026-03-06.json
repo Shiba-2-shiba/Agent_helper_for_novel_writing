@@ -1,0 +1,112 @@
+{
+  "summary": {
+    "total_cases": 9,
+    "passed_cases": 9,
+    "failed_cases": 0,
+    "pass_rate": 1.0,
+    "skills_covered": 9,
+    "covered_skill_list": [
+      "consistency-auditor",
+      "idea-generator",
+      "novel-writer",
+      "project-bootstrap",
+      "prose-polisher",
+      "resume-orchestrator",
+      "revision-editor",
+      "scene-planner",
+      "setting-creator"
+    ],
+    "missing_required_skills": [],
+    "failed_case_ids": [],
+    "fail_trigger_record_fields": [
+      "type",
+      "repro_input",
+      "expected_skill",
+      "predicted_skill"
+    ],
+    "overall_pass": true
+  },
+  "cases": [
+    {
+      "case_id": 1,
+      "skill": "idea-generator",
+      "input": "新しい小説を書きたい。都市伝説ホラーで短編向けの案を3つ出して。",
+      "expected_behavior": "発想の発散とログライン候補提示。プロジェクト初期化への導線がある。",
+      "predicted_skill": "idea-generator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 2,
+      "skill": "project-bootstrap",
+      "input": "このログラインで案件作成したい。プロジェクト名は `night_echo` で保存先も決めて。",
+      "expected_behavior": "初期条件確認、初期化手順、次スキルの提案がある。",
+      "predicted_skill": "project-bootstrap",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 3,
+      "skill": "setting-creator",
+      "input": "設定とプロットの土台を再設計したい。キャラ動機の矛盾を解消して。",
+      "expected_behavior": "設定ファイル順の確認と、因果補強の具体指示がある。",
+      "predicted_skill": "setting-creator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 4,
+      "skill": "scene-planner",
+      "input": "第4章の次の2シーンだけ段取りしたい。本文はまだ書かない。",
+      "expected_behavior": "範囲固定、Write Next の単一選定、執筆準備情報の提示がある。",
+      "predicted_skill": "scene-planner",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 5,
+      "skill": "novel-writer",
+      "input": "第4章2シーンを書いて。1000-1500文字で。",
+      "expected_behavior": "runtime-first 前提で新規本文執筆に入る。構造化メタ出力を避ける。",
+      "predicted_skill": "novel-writer",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 6,
+      "skill": "revision-editor",
+      "input": "このシーンを改稿して。テンポを改善しつつ結末は維持して。",
+      "expected_behavior": "保持点/変更点を分離し、既存稿を前提に改稿する。",
+      "predicted_skill": "revision-editor",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 7,
+      "skill": "consistency-auditor",
+      "input": "第5章の矛盾チェックをして。優先度付きで問題点を出して。",
+      "expected_behavior": "監査結果と修正方向を分離し、再確認可能な指摘を返す。",
+      "predicted_skill": "consistency-auditor",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 8,
+      "skill": "prose-polisher",
+      "input": "このシーンの文体を整えて。語尾の揺れを減らして読みやすくしたい。",
+      "expected_behavior": "構造変更を避けた表現改善に限定する。",
+      "predicted_skill": "prose-polisher",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 9,
+      "skill": "resume-orchestrator",
+      "input": "どこから再開すべき？今の状態から次にやることを1つ決めて。",
+      "expected_behavior": "現在地要約、推奨スキル1つ、Read First 3件以内を返す。",
+      "predicted_skill": "resume-orchestrator",
+      "status": "pass",
+      "fail_trigger": null
+    }
+  ]
+}

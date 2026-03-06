@@ -1,0 +1,22 @@
+{
+  "generated_at_utc": "2026-03-05T03:03:44.600493+00:00",
+  "trigger": {
+    "pass": true,
+    "skills_covered": 9,
+    "should_trigger_recall": 1.0,
+    "should_not_trigger_false_positive_rate": 0.0
+  },
+  "regression_minimum": {
+    "pass": true,
+    "total_cases": 9,
+    "failed_cases": 0,
+    "pass_rate": 1.0
+  },
+  "regression_boundary": {
+    "pass": true,
+    "total_cases": 21,
+    "failed_cases": 0,
+    "pass_rate": 1.0
+  },
+  "overall_pass": true
+}

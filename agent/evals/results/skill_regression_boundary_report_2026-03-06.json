@@ -1,0 +1,229 @@
+{
+  "summary": {
+    "total_cases": 22,
+    "passed_cases": 22,
+    "failed_cases": 0,
+    "pass_rate": 1.0,
+    "skills_covered": 9,
+    "covered_skill_list": [
+      "consistency-auditor",
+      "idea-generator",
+      "novel-writer",
+      "project-bootstrap",
+      "prose-polisher",
+      "resume-orchestrator",
+      "revision-editor",
+      "scene-planner",
+      "setting-creator"
+    ],
+    "missing_required_skills": [],
+    "failed_case_ids": [],
+    "fail_trigger_record_fields": [
+      "type",
+      "repro_input",
+      "expected_skill",
+      "predicted_skill"
+    ],
+    "overall_pass": true
+  },
+  "cases": [
+    {
+      "case_id": 1,
+      "skill": "idea-generator",
+      "input": "設定はまだ白紙。先に企画の方向性だけ3案ほしい。",
+      "expected_behavior": "設定確定前の発想フェーズとして案出しを返す。",
+      "predicted_skill": "idea-generator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 2,
+      "skill": "idea-generator",
+      "input": "まだ案件は作らない。まずログライン候補を比較したい。",
+      "expected_behavior": "初期化に進まず、ログライン比較を返す。",
+      "predicted_skill": "idea-generator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 3,
+      "skill": "project-bootstrap",
+      "input": "ログラインは決まった。保存先とプロジェクト名を確定して案件を作成したい。",
+      "expected_behavior": "初期化フェーズとして作成手順を返す。",
+      "predicted_skill": "project-bootstrap",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 4,
+      "skill": "project-bootstrap",
+      "input": "既存フォルダに agent 運用だけ追加したい。新規本文はまだ書かない。",
+      "expected_behavior": "初期化/運用整備として扱い、執筆へ直行しない。",
+      "predicted_skill": "project-bootstrap",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 5,
+      "skill": "setting-creator",
+      "input": "章を進める前に世界観ルールの矛盾を整理し直したい。",
+      "expected_behavior": "設定土台の見直しとして扱う。",
+      "predicted_skill": "setting-creator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 6,
+      "skill": "setting-creator",
+      "input": "04_plot_outline を再構成して因果をつなぎ直したい。",
+      "expected_behavior": "骨格設計の修正として扱う。",
+      "predicted_skill": "setting-creator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 7,
+      "skill": "setting-creator",
+      "input": "long_form_100k の planning gate が blocked なので、scene inventory を増やしてから進めたい。",
+      "expected_behavior": "scene-planner や novel-writer に進めず、計画ゲートの補強として扱う。",
+      "predicted_skill": "setting-creator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 8,
+      "skill": "scene-planner",
+      "input": "本文は書かないので、次の2シーンの段取りだけ決めて。",
+      "expected_behavior": "Write Next を1つに絞る段取り出力を返す。",
+      "predicted_skill": "scene-planner",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 9,
+      "skill": "scene-planner",
+      "input": "第6章の着手順を決めたい。シーン候補を比較して選びたい。",
+      "expected_behavior": "執筆前計画としてシーン選定を返す。",
+      "predicted_skill": "scene-planner",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 10,
+      "skill": "novel-writer",
+      "input": "第6章2シーンを1000-1500文字で新規執筆して。",
+      "expected_behavior": "新規本文執筆として扱う。",
+      "predicted_skill": "novel-writer",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 11,
+      "skill": "novel-writer",
+      "input": "runtime-first で続きを本文として書いて。",
+      "expected_behavior": "新規執筆フローとして扱う。",
+      "predicted_skill": "novel-writer",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 12,
+      "skill": "revision-editor",
+      "input": "方向性は維持して、このシーンのテンポだけ改稿して。",
+      "expected_behavior": "既存稿の改稿として扱う。",
+      "predicted_skill": "revision-editor",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 13,
+      "skill": "revision-editor",
+      "input": "既存本文の保持点を残して弱点だけリライトしたい。",
+      "expected_behavior": "保持点/変更点分離の改稿として扱う。",
+      "predicted_skill": "revision-editor",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 14,
+      "skill": "consistency-auditor",
+      "input": "この章の問題点を優先度付きで診断して。改稿はまだ不要。",
+      "expected_behavior": "監査結果中心で返す。",
+      "predicted_skill": "consistency-auditor",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 15,
+      "skill": "consistency-auditor",
+      "input": "違和感の原因を洗い出して、矛盾箇所を特定したい。",
+      "expected_behavior": "監査・診断として扱う。",
+      "predicted_skill": "consistency-auditor",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 16,
+      "skill": "prose-polisher",
+      "input": "構造は変えず、語尾と文体のノイズだけ整えて。",
+      "expected_behavior": "表現仕上げとして扱う。",
+      "predicted_skill": "prose-polisher",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 17,
+      "skill": "prose-polisher",
+      "input": "読みやすさを上げたい。冗長な言い回しを圧縮して。",
+      "expected_behavior": "推敲として扱う。",
+      "predicted_skill": "prose-polisher",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 18,
+      "skill": "resume-orchestrator",
+      "input": "中断していたので、どこから再開するかと次アクションを1つ決めたい。",
+      "expected_behavior": "再開整理として扱う。",
+      "predicted_skill": "resume-orchestrator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 19,
+      "skill": "resume-orchestrator",
+      "input": "現在地を整理して、読むべきファイルを先に3つ教えて。",
+      "expected_behavior": "再開判断と Read First 提示として扱う。",
+      "predicted_skill": "resume-orchestrator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 20,
+      "skill": "resume-orchestrator",
+      "input": "runtime の resume_brief と scene_brief が古そう。現在地を再確認して再開方針を1つに絞りたい。",
+      "expected_behavior": "runtime 不整合の再開整理として扱う。",
+      "predicted_skill": "resume-orchestrator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 21,
+      "skill": "resume-orchestrator",
+      "input": "scene_brief が見当たらない。いまの本文進捗から再開地点を整理して。",
+      "expected_behavior": "runtime 部分欠落の再開整理として扱う。",
+      "predicted_skill": "resume-orchestrator",
+      "status": "pass",
+      "fail_trigger": null
+    },
+    {
+      "case_id": 22,
+      "skill": "scene-planner",
+      "input": "第6章は既存シーンが複数ある。情報不足の1シーンを選んで段取りだけ固めて。",
+      "expected_behavior": "既存シーン再整理の計画として扱う。",
+      "predicted_skill": "scene-planner",
+      "status": "pass",
+      "fail_trigger": null
+    }
+  ]
+}

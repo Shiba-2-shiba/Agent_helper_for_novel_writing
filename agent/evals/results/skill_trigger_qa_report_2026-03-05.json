@@ -1,0 +1,109 @@
+{
+  "skills": {
+    "idea-generator": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    },
+    "project-bootstrap": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    },
+    "setting-creator": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    },
+    "scene-planner": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    },
+    "novel-writer": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    },
+    "revision-editor": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    },
+    "consistency-auditor": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    },
+    "prose-polisher": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    },
+    "resume-orchestrator": {
+      "should_trigger_total": 8,
+      "should_trigger_hit": 8,
+      "should_trigger_recall": 1.0,
+      "should_not_trigger_total": 8,
+      "should_not_trigger_true_negative": 8,
+      "should_not_trigger_true_negative_rate": 1.0,
+      "false_negative": [],
+      "false_positive": []
+    }
+  },
+  "summary": {
+    "skills_covered": 9,
+    "total_should_trigger": 72,
+    "total_should_trigger_hit": 72,
+    "should_trigger_recall": 1.0,
+    "total_should_not_trigger": 72,
+    "total_should_not_trigger_true_negative": 72,
+    "should_not_trigger_true_negative_rate": 1.0,
+    "should_not_trigger_false_positive_rate": 0.0,
+    "pass_threshold": {
+      "should_trigger_recall_min": 0.9,
+      "should_not_trigger_false_positive_rate_max": 0.1
+    },
+    "overall_pass": true
+  }
+}

@@ -1,0 +1,25 @@
+Captured At: 2026-03-05
+Scope: agent/skills
+
+Canonical Skills
+- agent/skills/consistency-auditor/SKILL.md
+- agent/skills/idea-generator/SKILL.md
+- agent/skills/novel-writer/SKILL.md
+- agent/skills/project-bootstrap/SKILL.md
+- agent/skills/prose-polisher/SKILL.md
+- agent/skills/resume-orchestrator/SKILL.md
+- agent/skills/revision-editor/SKILL.md
+- agent/skills/scene-planner/SKILL.md
+- agent/skills/setting-creator/SKILL.md
+
+Legacy Skills
+- agent/skills/legacy/SKILL_consistency_audit.md
+- agent/skills/legacy/SKILL_idea_generation.md
+- agent/skills/legacy/SKILL_novel.md
+- agent/skills/legacy/SKILL_planner.md
+- agent/skills/legacy/SKILL_polish.md
+- agent/skills/legacy/SKILL_project_bootstrap.md
+- agent/skills/legacy/SKILL_resume_orchestrator.md
+- agent/skills/legacy/SKILL_revision.md
+- agent/skills/legacy/SKILL_scene_planning.md
+- agent/skills/legacy/SKILL_setting_creation.md

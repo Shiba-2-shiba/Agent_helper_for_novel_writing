@@ -23,6 +23,25 @@ META_PATTERNS = [
 ]
 
 
+def parse_scene_brief_band(runtime_dir):
+    scene_brief_path = os.path.join(runtime_dir, "scene_brief_compact.md")
+    if not os.path.isfile(scene_brief_path):
+        return None
+
+    text = read_text_file(scene_brief_path)
+    scene_type_match = re.search(r"(?m)^Scene Type:\s*(.+)$", text)
+    band_match = re.search(r"(?m)^Length Band:\s*(\d+)\s*/\s*(\d+)\s*/\s*(\d+)$", text)
+    if not band_match:
+        return None
+
+    return {
+        "scene_type": scene_type_match.group(1).strip() if scene_type_match else "default",
+        "min": int(band_match.group(1)),
+        "target": int(band_match.group(2)),
+        "max": int(band_match.group(3)),
+    }
+
+
 def detect_unclosed_dialogue(text):
     open_count = text.count("「")
     close_count = text.count("」")
@@ -225,6 +244,12 @@ def main():
         if args.runtime_dir
         else os.path.join(project_dir, "runtime")
     )
+    scene_band = parse_scene_brief_band(runtime_dir)
+    effective_min = scene_band["min"] if scene_band else args.min_chars
+    effective_target = scene_band["target"] if scene_band else args.target_chars
+    effective_max = scene_band["max"] if scene_band else args.max_chars
+    scene_type = scene_band["scene_type"] if scene_band else "default"
+    validate_char_bounds(effective_min, effective_target, effective_max)
 
     body_text = read_text_file(text_path)
     actual_chars = len(body_text)
@@ -234,13 +259,21 @@ def main():
     report = {
         "target_file": text_path,
         "actual_chars": actual_chars,
-        "min_chars": args.min_chars,
-        "target_chars": args.target_chars,
-        "max_chars": args.max_chars,
-        "char_delta_to_min": actual_chars - args.min_chars,
-        "char_delta_to_target": actual_chars - args.target_chars,
-        "needs_expand": actual_chars < args.min_chars,
-        "within_max": actual_chars <= args.max_chars,
+        "scene_type": scene_type,
+        "min_chars": effective_min,
+        "target_chars": effective_target,
+        "max_chars": effective_max,
+        "expected_band": {
+            "min": effective_min,
+            "target": effective_target,
+            "max": effective_max,
+        },
+        "char_delta_to_min": actual_chars - effective_min,
+        "char_delta_to_target": actual_chars - effective_target,
+        "needs_expand": actual_chars < effective_min,
+        "under_min_for_type": actual_chars < effective_min,
+        "within_max": actual_chars <= effective_max,
+        "over_max_for_type": actual_chars > effective_max,
         "format_violations": violations,
         "format_violations_detail": violation_details,
         "forbidden_hits": forbidden_hits,

@@ -1,7 +1,6 @@
 ---
 name: revision-editor
-description: Rewrite an existing scene while preserving selected strengths and changing targeted weaknesses. Use when the user wants a scene rewritten, tightened, redirected, or partially restructured without switching into pure diagnostic mode.
-version: 0.1
+description: Rewrite an existing scene while preserving selected strengths and changing targeted weaknesses. Use when the user wants a scene rewritten, tightened, redirected, or partially restructured without switching into pure diagnostic mode. 日本語トリガー例: このシーンを改稿して、弱点を直したいとき。
 ---
 
 # Purpose
@@ -56,9 +55,9 @@ version: 0.1
 
 # Handoff
 
-- 設定の根本変更が必要: `SKILL_setting_creation.md`
-- 先に問題洗い出しが必要: `SKILL_consistency_audit.md`
-- 仕上げ調整だけが残る: `SKILL_polish.md`
+- 設定の根本変更が必要: `agent/skills/setting-creator/SKILL.md`
+- 先に問題洗い出しが必要: `agent/skills/consistency-auditor/SKILL.md`
+- 仕上げ調整だけが残る: `agent/skills/prose-polisher/SKILL.md`
 
 # Outputs
 
@@ -71,3 +70,5 @@ version: 0.1
 - 何を残すか決めずに全面改稿しない
 - 章方針変更と局所改稿を混同しない
 - 前後の接続を無視しない
+
+

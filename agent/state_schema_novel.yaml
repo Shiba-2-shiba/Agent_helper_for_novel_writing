@@ -3,7 +3,7 @@ version: 3
 # novel catalog state schema
 # このファイルは、現行運用で参照する「可変状態の正本」です。
 # 特定作品の完成データを固定で持たず、各プロジェクトで埋めて使う前提の共通スキーマとして扱います。
-# 不変ルールは `memory/global_notes.md`、手順は `skills/SKILL_*.md` を参照してください。
+# 不変ルールは `memory/global_notes.md`、手順は `skills/<skill-name>/SKILL.md` を参照してください。
 
 project:
   name: "" # 例: "modern_isekai_42"
@@ -24,10 +24,30 @@ profile:
 
 targets:
   total_chars: 100000
-  chapter_chars: {} # 例: {"1": 20000, "2": 20000}
-  scene_default_chars: 1250
-  scene_min_chars: 1000
-  scene_max_chars: 1500
+  chapter_chars: {} # 例: {"1": 18000, "2": 20000, "3": 20000, "4": 26000, "5": 16000}
+  scene_default_chars: 1250 # 旧運用互換。`long_form_100k` では `scene_type_bands` を優先
+  scene_min_chars: 1000 # 旧運用互換
+  scene_max_chars: 1500 # 旧運用互換
+  length_mode: "long_form_100k" # one of: short / standard / long_form_100k
+  planning_gate_min_chars: 80000
+  planning_target_total_chars: 100000
+  scene_type_bands:
+    bridge:
+      min: 1200
+      target: 1500
+      max: 1800
+    standard:
+      min: 1600
+      target: 2000
+      max: 2400
+    anchor:
+      min: 2200
+      target: 2700
+      max: 3200
+    climax:
+      min: 2600
+      target: 3200
+      max: 3800
 
 style_contract:
   pov: "" # 例: "三人称（主人公寄り）"
@@ -36,12 +56,11 @@ style_contract:
   lexical_rules: [] # 例: ["本文は地の文と会話のみ", "見出しを入れない"]
   tone_watch: [] # 例: ["会話テンポ優先", "説明過多にしない"]
 
-characters:
-  [] # 例:
-  # - name: "主人公名"
-  #   role: "主人公"
-  #   traits: ["慎重", "観察力が高い"]
-  #   notes: "対人距離が近すぎない"
+characters: [] # 例:
+# - name: "主人公名"
+#   role: "主人公"
+#   traits: ["慎重", "観察力が高い"]
+#   notes: "対人距離が近すぎない"
 
 story_constraints:
   must_include: [] # 例: ["各話末に未解決要素を残す"]
@@ -51,15 +70,19 @@ continuity_watch:
   unresolved_threads: [] # 未回収の謎、約束、対立
   upcoming_payoffs: [] # 次章や次シーンで回収予定の要素
   risk_flags: [] # 例: ["主人公の動機が弱い", "文体がぶれ始めている"]
+  planned_payoffs: [] # 章やシーン台帳で回収予定として明示した要素
+  missing_payoffs: [] # 本来回収予定だが未反映の要素
 
 active_work:
   current_mode: "" # one of: idea_generation / project_bootstrap / setting_creation / scene_planning / novel / revision / consistency_audit / polish / resume_orchestrator
-  recommended_skill: "" # 例: "SKILL_novel"
+  recommended_skill: "" # 例: "novel-writer"
   primary_scope: "" # 例: "chapter_3_scene_2"
   active_chapter: 0 # 例: 3
   active_scene: "" # 例: "3-2"
   next_action: "" # 例: "scene 3-2 の初稿を作成"
   files_to_check_first: [] # 例: ["05_chapter_outline_100k.md", "chapter_3_scene_1.txt"]
+  planning_gate_status: "" # one of: blocked / ready
+  current_scene_type: "" # 例: bridge / standard / anchor / climax
 
 progress:
   total_chapters: 0
@@ -68,6 +91,12 @@ progress:
   current_scene: "" # 例: "2-4"
   total_chars_written: 0
   chapter_chars_written: {} # 例: {"1": 18400, "2": 6200}
+  planned_total_min_chars: 0
+  planned_total_target_chars: 0
+  planned_scene_count: 0
+  completed_scene_count: 0
+  chapter_scene_counts: {} # 例: {"1": 5, "2": 6}
+  chapter_planned_chars: {} # 例: {"1": 18000, "2": 19000}
 
 recent_decisions:
   [] # 直近の重要判断を短く記録する。詳細は `decisions_log.md`

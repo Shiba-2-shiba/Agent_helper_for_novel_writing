@@ -10,7 +10,8 @@
 - `Purpose` と `Deliverables` は必須
 - 本文の正本はシーン単位 `txt`
 - 通常運用では `body.md` を本文追記先として指定しない
-- 1シーンの文字数契約は原則 `1000-1500`
+- `long_form_100k` では固定 `1000-1500` ではなく、`scene_type` ごとの `Length Band` を使う
+- 低クレジット運用では、`bridge` を短く保ち、`anchor` / `climax` だけを厚くする
 - 必須項目だけで依頼してよい。細部は `Context` と `Notes` で補う
 - `Mode` を書く場合は、`HUB.md` の正式モード名をそのまま使う
 - 正式モード名: `idea_generation` / `project_bootstrap` / `setting_creation` / `scene_planning` / `novel` / `revision` / `consistency_audit` / `polish` / `resume_orchestrator`
@@ -55,7 +56,9 @@
 
 ## Constraints
 - 命名ルール
-- 文字数目標（必要なら）
+- `Length Mode`（例: `standard` / `long_form_100k`）
+- `Target Total Chars`（必要なら）
+- `Prefer Low Credit Mode`（yes / no）
 ```
 
 ---
@@ -79,6 +82,8 @@
 ## Constraints
 - 維持したい世界観
 - 維持したい着地点
+- `Planning Gate` を通したいか
+- 重要シーンだけ厚くしたいか
 ```
 
 ---
@@ -101,7 +106,10 @@
 - シーン順
 - 目的
 - 衝突
+- 回収 / 種まき
 - 次へのフック
+- `Scene Type`
+- `Length Band`
 ```
 
 ---
@@ -114,7 +122,8 @@
 
 ## Deliverables
 - 対象: chapter_x_scene_y.txt
-- 長さ: 1000〜1500文字
+- `Scene Type`: `bridge` / `standard` / `anchor` / `climax`
+- `Length Band`: 自動 または 明示
 - 出力: 本文初稿
 
 ## Required Context
@@ -129,6 +138,8 @@
 - 視点
 - 禁止表現
 - 残したいフック
+- `Length Mode`
+- `Prefer Low Credit Mode`
 ```
 
 ---
@@ -141,7 +152,7 @@
 
 ## Deliverables
 - 対象: 既存の scene txt
-- 長さ: 1000〜1500文字
+- `Scene Type` と `Length Band` を維持または調整
 - 出力: 改稿版
 
 ## Required Context
@@ -234,6 +245,12 @@
 ## Priority（あれば）
 速さ優先 / 品質優先 / バランス重視
 
+## Length Mode（あれば）
+short / standard / long_form_100k
+
+## Prefer Low Credit Mode（あれば）
+yes / no
+
 ## Mode（あれば）
 idea_generation / project_bootstrap / setting_creation / scene_planning / novel / revision / consistency_audit / polish / resume_orchestrator
 
@@ -269,7 +286,8 @@ resume_orchestrator: 今どこから再開すべきか整理して。
 
 ## Deliverables
 - 対象: chapter_2_scene_1.txt
-- 長さ: 1000〜1500文字
+- Scene Type: standard
+- Length Band: 自動
 - 出力: 本文初稿
 
 ## Context
@@ -279,6 +297,8 @@ resume_orchestrator: 今どこから再開すべきか整理して。
 ## Constraints
 - 視点は三人称（主人公寄り）
 - 見出しや箇条書きは本文に入れない
+- Length Mode: long_form_100k
+- Prefer Low Credit Mode: yes
 
 ## Notes
 - シーン末尾に次の検証フックを残したい
