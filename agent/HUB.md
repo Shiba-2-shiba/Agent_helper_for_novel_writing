@@ -14,7 +14,7 @@
 - 通常運用では、本文の正本をシーン単位 `txt` とし、`body.md` を本文追記先として扱わない
 - 新規本文の執筆と再開整理は `runtime/` を優先参照する `runtime-first` で扱う
 - `runtime/` が未生成、対象シーンと不一致、または欠損している場合のみ、従来の広い文脈へフォールバックする
-- `long_form_100k` では、`planning_gate_status=ready` になるまで `scene-planner` / `novel-writer` へ進めず、先に `setting-creator` で計画を詰める
+- `planning_gate_enabled=true` で、`planning_gate_status=ready` になるまで `scene-planner` / `novel-writer` へ進めず、先に `setting-creator` で計画を詰める
 
 ### 正式モード名（正本）
 
@@ -136,7 +136,7 @@
 - ログライン合意後に案件の箱が未作成な場合: `idea-generator` から `project-bootstrap` へ移る
 - 初期化後に世界観や骨格が未確定な場合: `project-bootstrap` から `setting-creator` へ移る
 - 初期化後に大枠は固まっており、直近の章やシーンだけ詰めればよい場合: `project-bootstrap` から `scene-planner` へ移る
-- ただし `long_form_100k` で `planning_gate_status != ready` の場合: `project-bootstrap` / `resume-orchestrator` / `scene-planner` から `setting-creator` を優先する
+- ただし `planning_gate_enabled=true` かつ `planning_gate_status != ready` の場合: `project-bootstrap` / `resume-orchestrator` / `scene-planner` から `setting-creator` を優先する
 - 執筆中に設定やプロットの前提変更が必要になった場合: `novel-writer` から `setting-creator` へ移る
 - 執筆前に次の章やシーンの段取り不足が見つかった場合: `novel-writer` から `scene-planner` へ移る
 - 監査で重大な矛盾が見つかり、設定の修正が必要な場合: `consistency-auditor` から `setting-creator` へ移る
@@ -151,7 +151,7 @@
 - 問題点の特定前なら、先に `consistency-auditor`
 - 案件自体が未初期化なら、先に `project-bootstrap`
 - 大枠はあるが直近の書き出しに必要な段取りが足りないなら、先に `scene-planner`
-- `long_form_100k` で planning gate 未通過なら、直近段取り不足として扱わず、先に `setting-creator`
+- `planning_gate_enabled=true` で planning gate 未通過なら、直近段取り不足として扱わず、先に `setting-creator`
 - 問題点が特定済みなら、直接 `revision-editor` または `prose-polisher`
 - 「次に何をすべきか」自体が曖昧なら、先に `resume-orchestrator`
 
@@ -162,11 +162,14 @@
 - `body.md` は通常の本文追記先ではない
 - 1 シーンの文字数契約は原則 `1000-1500`
 - `Mode` / `current_mode` は、このファイルの「正式モード名（正本）」に揃える
+- `Target Total Chars` を最初に決める
+- `Target Length Profile` は補助ラベルであり、本文長の正本は `Length Band`
+- 全体計画の正本は `05_chapter_outline.md`
+- legacy project では `05_chapter_outline_100k.md` を fallback として読んでよい
 - 新規本文では `runtime/draft_prompt.txt` または `runtime/style_contract_compact.md` / `scene_brief_compact.md` / `continuity_pack.md` / `request_compact.md` を優先参照する
 - `runtime/planning_gate_brief.md` があれば、長編の gate 判定と次 planning action の正本として優先参照する
-- `long_form_100k` で `request_compact.md` または `state_schema_novel.yaml` の `planning_gate_status != ready` なら、本文執筆へ進めない
+- `planning_gate_enabled=true` かつ `request_compact.md` または `state_schema_novel.yaml` の `planning_gate_status != ready` なら、本文執筆へ進めない
 - 再開整理では `runtime/resume_brief.md` があれば優先参照する
 - 文体契約、進捗、キャラ制約は `runtime/` に不足がある場合のみ `state_schema_*.yaml` と `memory/global_notes.md` を補助参照する
 - 診断結果と修正方針は混同せず、必要なら監査と改稿を分ける
-
 

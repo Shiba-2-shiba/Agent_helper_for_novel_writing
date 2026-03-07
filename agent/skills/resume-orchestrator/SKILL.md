@@ -18,7 +18,7 @@ description: Recover project state, identify the correct next step, and route ba
 - `runtime/scene_brief_compact.md` がない場合は、対象プロジェクトの `runtime/check_report.json` を優先する
 - `runtime/scene_brief_compact.md` も `runtime/check_report.json` もない場合は、対象プロジェクトの最新シーン `txt` を優先する
 - `runtime/` に不足がある場合のみ、対象プロジェクトの `state_schema_novel.yaml`
-- `long_form_100k` や planning gate 確認が必要な場合は、対象プロジェクトの `state_schema_novel.yaml`
+- target profile や planning gate 確認が必要な場合は、対象プロジェクトの `state_schema_novel.yaml`
 - `runtime/` に不足がある場合のみ、対象プロジェクトの `memory/global_notes.md`
 - `runtime/` に不足がある場合のみ、対象プロジェクトの `memory/session_notes.md`
 - 必要なら `agent/memory/session_archive.md`
@@ -77,7 +77,7 @@ description: Recover project state, identify the correct next step, and route ba
 - `scene_brief_compact.md` や `check_report.json` の対象が stale の場合は、どのファイルが古いかを明示し、`runtime` 再生成が必要であることを返答に含める
 - 更新時刻の補助判定だけでは断定せず、本文実体や検査結果の内容確認も合わせて最終判断する
 - `runtime/resume_brief.md` がない場合のみ、状態ファイルやメモから現在地を再構築する
-- `long_form_100k` で `planning_gate_status != ready` の場合は、再開対象が本文寄りでも `setting-creator` を優先する
+- `planning_gate_enabled=true` かつ `planning_gate_status != ready` の場合は、再開対象が本文寄りでも `setting-creator` を優先する
 
 - 完了済みの章、シーン
 - 直近の未解決事項
@@ -91,7 +91,7 @@ description: Recover project state, identify the correct next step, and route ba
 - 対象シーンはあるが、文字数不足、形式違反、直近修正の取り込み不足が主問題なら、改稿を先にする
 - 対象シーンや章の整合、締め、伏線回収の確認が主問題なら、監査を先にする
 - `runtime/resume_brief.md` が「書き始める条件は揃っている」と示し、次の対象シーンも明確なら、新規執筆に進める
-- ただし `long_form_100k` で `planning_gate_status != ready` の場合は、新規執筆や `scene-planner` ではなく `setting-creator` に戻す
+- ただし `planning_gate_enabled=true` かつ `planning_gate_status != ready` の場合は、新規執筆や `scene-planner` ではなく `setting-creator` に戻す
 - 問題の本体がシーン単位ではなく、設定穴や世界観の未確定にある場合のみ、設定再整理を優先する
 - 複数候補があり得る場合は、「最も次の 1 アクションに近いスキル」を優先し、広い工程へ戻しすぎない
 - 新規執筆に進む場合は、`agent/skills/novel-writer/SKILL.md` の `runtime-first` ループへ渡す
@@ -144,5 +144,4 @@ description: Recover project state, identify the correct next step, and route ba
 - 次の優先タスクを曖昧なまま終えない
 - `runtime/resume_brief.md` が使えるのに、先にフル文脈を読み直さない
 - 推奨スキルを複数列挙して判断をユーザーに丸投げしない
-
 

@@ -27,20 +27,13 @@ from prompt_utils import (
     read_optional_text,
     read_text_file,
     require_existing_file,
+    resolve_outline_path,
     resolve_scene_type_band,
     resolve_project_path,
     resolve_relative_path,
     validate_positive_int,
     write_text_file,
 )
-
-
-def _find_outline_path(project_dir):
-    return _find_first_existing(
-        os.path.join(project_dir, "05_chapter_outline_100k.md"),
-        os.path.join(project_dir, "plot", "05_chapter_outline_100k.md"),
-        os.path.join(project_dir, "memory", "05_chapter_outline_100k.md"),
-    )
 
 
 def _extract_outline_chapter_numbers(outline_text):
@@ -57,15 +50,16 @@ def build_planning_gate_brief(planning_meta, outline_text):
     planned_total_min_chars = computed_totals.get("planned_total_min_chars", 0) or planning_meta["planned_total_min_chars"]
     planned_total_target_chars = computed_totals.get("planned_total_target_chars", 0) or planning_meta["planned_total_target_chars"]
     gate_threshold = planning_meta["planning_gate_min_chars"]
+    gate_enabled = planning_meta["planning_gate_enabled"]
     gate_status = planning_meta["planning_gate_status"] or "unknown"
 
     chapter_scene_counts = computed_totals.get("chapter_scene_counts", {})
     chapters_with_inventory = [str(chapter) for chapter in chapter_numbers if chapter_scene_counts.get(str(chapter), 0) > 0]
     chapters_missing_inventory = [str(chapter) for chapter in chapter_numbers if chapter_scene_counts.get(str(chapter), 0) == 0]
-    gate_gap = max(0, gate_threshold - planned_total_min_chars) if gate_threshold else 0
+    gate_gap = max(0, gate_threshold - planned_total_min_chars) if gate_enabled and gate_threshold else 0
 
-    if planning_meta["length_mode"] != "long_form_100k":
-        next_action = "long_form_100k 以外では planning gate は参考情報。通常の runtime-first 運用を続ける。"
+    if not gate_enabled:
+        next_action = "planning gate は無効。通常の runtime-first 運用を続ける。"
     elif gate_status == "ready":
         next_action = "planning gate は通過済み。対象シーンの段取りまたは本文執筆へ進める。"
     elif chapters_missing_inventory:
@@ -81,14 +75,17 @@ def build_planning_gate_brief(planning_meta, outline_text):
     return "\n".join(
         [
             "# Planning Gate Brief",
-            f"Length Mode: {planning_meta['length_mode']}",
+            f"Target Total Chars: {planning_meta['target_total_chars']}",
+            f"Target Length Profile: {planning_meta['target_length_profile']}",
+            f"Planning Gate Enabled: {str(gate_enabled).lower()}",
             f"Planning Gate: {gate_status}",
             "Planning Totals:",
             f"- Planned Scene Count: {planned_scene_count}",
             f"- Planned Total Min Chars: {planned_total_min_chars}",
             f"- Planned Total Target Chars: {planned_total_target_chars}",
-            f"- Gate Threshold: {gate_threshold}",
-            f"- Target Total Chars: {planning_meta['planning_target_total_chars']}",
+            f"- Planning Gate Min Chars: {gate_threshold}",
+            f"- Planning Target Total Chars: {planning_meta['planning_target_total_chars']}",
+            *([f"Length Mode: {planning_meta['length_mode']}"] if planning_meta["length_mode"] else []),
             "Coverage Snapshot:",
             f"- Outline Chapters Found: {len(chapter_numbers)}",
             f"- Chapters With Scene Inventory: {', '.join(chapters_with_inventory) if chapters_with_inventory else '-'}",
@@ -201,6 +198,9 @@ def build_scene_brief(chapter_block, scene_ref, project_dir, planning_meta):
             f"Conflict: {conflict}",
             f"Emotion Shift: {emotion_shift}",
             f"Hook: {hook}",
+            f"Target Total Chars: {planning_meta['target_total_chars']}",
+            f"Target Length Profile: {planning_meta['target_length_profile']}",
+            f"Planning Gate Enabled: {str(planning_meta['planning_gate_enabled']).lower()}",
             f"Scene Type: {length_band['scene_type']}",
             f"Length Band: {length_band['min']} / {length_band['target']} / {length_band['max']}",
             f"Chapter Budget Remaining: {chapter_budget_remaining}",
@@ -276,23 +276,26 @@ def build_request_compact(mode, priority, scene_ref, planning_meta, length_band)
             "次アクション候補",
         ]
 
-    return "\n".join(
-        [
-            "# Request Compact",
-            f"Current Mode: {mode}",
-            f"Purpose: {purpose}",
-            "Deliverables:",
-            *[f"- {item}" for item in deliverables],
-            "Constraints:",
-            "- フル文脈を再投入しない",
-            "- 文体契約を優先する",
-            f"- 対象シーン: {scene_ref['canonical_id']}",
-            f"- Length Mode: {planning_meta['length_mode']}",
-            f"- Planning Gate: {planning_meta['planning_gate_status'] or 'unknown'}",
-            f"- Target Band: {length_band['min']} / {length_band['target']} / {length_band['max']}",
-            f"Priority: {priority}",
-        ]
-    )
+    lines = [
+        "# Request Compact",
+        f"Current Mode: {mode}",
+        f"Purpose: {purpose}",
+        "Deliverables:",
+        *[f"- {item}" for item in deliverables],
+        "Constraints:",
+        "- フル文脈を再投入しない",
+        "- 文体契約を優先する",
+        f"- 対象シーン: {scene_ref['canonical_id']}",
+        f"- Target Total Chars: {planning_meta['target_total_chars']}",
+        f"- Target Length Profile: {planning_meta['target_length_profile']}",
+        f"- Planning Gate Enabled: {str(planning_meta['planning_gate_enabled']).lower()}",
+        f"- Planning Gate: {planning_meta['planning_gate_status'] or 'unknown'}",
+        f"- Target Band: {length_band['min']} / {length_band['target']} / {length_band['max']}",
+        f"Priority: {priority}",
+    ]
+    if planning_meta["length_mode"]:
+        lines.append(f"- Length Mode: {planning_meta['length_mode']}")
+    return "\n".join(lines)
 
 
 def build_resume_brief(scene_ref, previous_pack, session_notes_text, planning_meta):
@@ -380,13 +383,13 @@ def main():
     runtime_dir = os.path.join(project_dir, "runtime")
     ensure_directory(runtime_dir)
 
-    outline_path = _find_outline_path(project_dir)
-    outline_text = read_text_file(outline_path) if outline_path else ""
+    outline_path = resolve_outline_path(project_dir)
+    outline_text = read_text_file(outline_path) if os.path.exists(outline_path) else ""
 
     chapter_block = ""
     if args.mode == "draft":
-        if outline_path is None:
-            raise UserFacingError("05_chapter_outline_100k.md not found")
+        outline_path = resolve_outline_path(project_dir, require_exists=True)
+        outline_text = read_text_file(outline_path)
         chapter_block = extract_chapter_block(outline_text, args.chapter)
         if not chapter_block:
             raise UserFacingError(f"chapter {args.chapter} block not found in outline")
@@ -422,7 +425,12 @@ def main():
                 "previous scene is large and may inflate runtime prompts "
                 f"(estimated_tokens={continuity_tokens}, target<={RUNTIME_CONTINUITY_WARN_LIMIT})"
             )
-    if args.mode == "draft" and planning_meta["planning_gate_status"] and planning_meta["planning_gate_status"] != "ready":
+    if (
+        args.mode == "draft"
+        and planning_meta["planning_gate_enabled"]
+        and planning_meta["planning_gate_status"]
+        and planning_meta["planning_gate_status"] != "ready"
+    ):
         warnings.append(
             "planning_gate_status is not ready; runtime was generated for inspection, "
             "but drafting should normally wait until planning is complete"

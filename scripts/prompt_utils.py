@@ -11,6 +11,26 @@ DEFAULT_MAX_CHARS = 1500
 RUNTIME_PROMPT_WARN_LIMIT = 8000
 RUNTIME_CONTINUITY_WARN_LIMIT = 1500
 SCENE_FILENAME_RE = re.compile(r"^chapter_?(\d+)_scene_?(\d+)\.txt$", re.IGNORECASE)
+CANONICAL_OUTLINE_FILENAME = "05_chapter_outline.md"
+LEGACY_OUTLINE_FILENAME = "05_chapter_outline_100k.md"
+TARGET_PROFILE_SPECS = {
+    30000: {
+        "target_length_profile": "novel_30k",
+        "planning_gate_min_chars": 24000,
+    },
+    50000: {
+        "target_length_profile": "novel_50k",
+        "planning_gate_min_chars": 40000,
+    },
+    100000: {
+        "target_length_profile": "novel_100k",
+        "planning_gate_min_chars": 80000,
+    },
+}
+TARGET_TOTAL_CHARS_BY_PROFILE = {
+    spec["target_length_profile"]: total_chars
+    for total_chars, spec in TARGET_PROFILE_SPECS.items()
+}
 
 
 class UserFacingError(Exception):
@@ -112,6 +132,38 @@ def validate_char_bounds(min_chars, target_chars, max_chars):
     validate_positive_int("max_chars", max_chars)
     if not (min_chars <= target_chars <= max_chars):
         raise UserFacingError("expected min_chars <= target_chars <= max_chars")
+
+
+def compute_target_length_profile(target_total_chars: int) -> str:
+    spec = TARGET_PROFILE_SPECS.get(target_total_chars)
+    if spec is None:
+        raise UserFacingError(f"unsupported target_total_chars: {target_total_chars}")
+    return spec["target_length_profile"]
+
+
+def compute_gate_threshold(target_total_chars: int) -> int:
+    spec = TARGET_PROFILE_SPECS.get(target_total_chars)
+    if spec is None:
+        raise UserFacingError(f"unsupported target_total_chars: {target_total_chars}")
+    return spec["planning_gate_min_chars"]
+
+
+def _compute_target_total_chars_from_profile(target_length_profile: str) -> int:
+    total_chars = TARGET_TOTAL_CHARS_BY_PROFILE.get(target_length_profile)
+    if total_chars is None:
+        raise UserFacingError(f"unsupported target_length_profile: {target_length_profile}")
+    return total_chars
+
+
+def build_target_profile_payload(target_total_chars: int, *, source: str, planning_gate_enabled: bool = True) -> dict:
+    return {
+        "target_total_chars": target_total_chars,
+        "target_length_profile": compute_target_length_profile(target_total_chars),
+        "planning_gate_enabled": bool(planning_gate_enabled),
+        "planning_gate_min_chars": compute_gate_threshold(target_total_chars),
+        "planning_target_total_chars": target_total_chars,
+        "source": source,
+    }
 
 
 def parse_scene_reference(scene_raw):
@@ -332,6 +384,83 @@ def _extract_state_scalar(text, key, default_value=""):
     return match.group(1).strip().strip('"').strip("'")
 
 
+def _parse_bool_text(raw_value, default_value=None):
+    if raw_value is None:
+        return default_value
+    cleaned = str(raw_value).strip().strip('"').strip("'").lower()
+    if cleaned in {"true", "yes", "on", "1"}:
+        return True
+    if cleaned in {"false", "no", "off", "0"}:
+        return False
+    return default_value
+
+
+def resolve_target_profile_from_state(state_schema_text: str, *, fallback_total_chars: int = 100000) -> dict:
+    target_total_chars = _parse_int_from_text(_extract_state_scalar(state_schema_text, "target_total_chars", "0"))
+    if target_total_chars:
+        planning_gate_enabled = _parse_bool_text(
+            _extract_state_scalar(state_schema_text, "planning_gate_enabled", ""),
+            default_value=True,
+        )
+        return build_target_profile_payload(
+            target_total_chars,
+            source="canonical_state",
+            planning_gate_enabled=planning_gate_enabled,
+        )
+
+    target_length_profile = _extract_state_scalar(state_schema_text, "target_length_profile", "")
+    if target_length_profile:
+        planning_gate_enabled = _parse_bool_text(
+            _extract_state_scalar(state_schema_text, "planning_gate_enabled", ""),
+            default_value=True,
+        )
+        return build_target_profile_payload(
+            _compute_target_total_chars_from_profile(target_length_profile),
+            source="canonical_state",
+            planning_gate_enabled=planning_gate_enabled,
+        )
+
+    planning_target_total_chars = _parse_int_from_text(
+        _extract_state_scalar(state_schema_text, "planning_target_total_chars", "0")
+    )
+    if planning_target_total_chars in TARGET_PROFILE_SPECS:
+        return build_target_profile_payload(planning_target_total_chars, source="legacy_planning_target")
+
+    total_chars = _parse_int_from_text(_extract_state_scalar(state_schema_text, "total_chars", "0"))
+    if total_chars in TARGET_PROFILE_SPECS:
+        return build_target_profile_payload(total_chars, source="legacy_total_chars")
+
+    length_mode = _extract_state_scalar(state_schema_text, "length_mode", "")
+    if length_mode == "long_form_100k":
+        return build_target_profile_payload(100000, source="legacy_length_mode")
+
+    return build_target_profile_payload(fallback_total_chars, source="fallback")
+
+
+def resolve_outline_path(project_dir: str, *, require_exists: bool = False) -> str:
+    candidates = [
+        os.path.join(project_dir, CANONICAL_OUTLINE_FILENAME),
+        os.path.join(project_dir, LEGACY_OUTLINE_FILENAME),
+        os.path.join(project_dir, "plot", CANONICAL_OUTLINE_FILENAME),
+        os.path.join(project_dir, "plot", LEGACY_OUTLINE_FILENAME),
+        os.path.join(project_dir, "memory", CANONICAL_OUTLINE_FILENAME),
+        os.path.join(project_dir, "memory", LEGACY_OUTLINE_FILENAME),
+    ]
+    resolved = _find_first_existing(*candidates)
+    if resolved:
+        return resolved
+    if require_exists:
+        raise UserFacingError(
+            f"{CANONICAL_OUTLINE_FILENAME} or {LEGACY_OUTLINE_FILENAME} not found"
+        )
+    return candidates[0]
+
+
+def load_target_length_profile(project_dir: str) -> dict:
+    state_schema_text = _extract_state_schema_text(project_dir)
+    return resolve_target_profile_from_state(state_schema_text)
+
+
 def _parse_scene_type_bands_from_state(state_schema_text):
     if not state_schema_text:
         return {}
@@ -372,12 +501,31 @@ def _parse_scene_type_bands_from_state(state_schema_text):
 
 def load_planning_metadata(project_dir):
     state_schema_text = _extract_state_schema_text(project_dir)
+    target_profile = resolve_target_profile_from_state(state_schema_text)
+    planning_gate_enabled = _parse_bool_text(
+        _extract_state_scalar(state_schema_text, "planning_gate_enabled", ""),
+        default_value=target_profile["planning_gate_enabled"],
+    )
+    planning_gate_min_chars = _parse_int_from_text(
+        _extract_state_scalar(state_schema_text, "planning_gate_min_chars", "0")
+    ) or target_profile["planning_gate_min_chars"]
+    planning_target_total_chars = _parse_int_from_text(
+        _extract_state_scalar(state_schema_text, "planning_target_total_chars", "0")
+    ) or target_profile["planning_target_total_chars"]
+    legacy_length_mode = _extract_state_scalar(state_schema_text, "length_mode", "")
+    if not legacy_length_mode and target_profile["target_length_profile"] == "novel_100k":
+        legacy_length_mode = "long_form_100k"
+
     return {
         "state_schema_text": state_schema_text,
-        "length_mode": _extract_state_scalar(state_schema_text, "length_mode", "standard"),
+        "length_mode": legacy_length_mode,
+        "target_total_chars": target_profile["target_total_chars"],
+        "target_length_profile": target_profile["target_length_profile"],
+        "planning_gate_enabled": planning_gate_enabled,
+        "target_profile_source": target_profile["source"],
         "planning_gate_status": _extract_state_scalar(state_schema_text, "planning_gate_status", ""),
-        "planning_gate_min_chars": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planning_gate_min_chars", "0")),
-        "planning_target_total_chars": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planning_target_total_chars", "0")),
+        "planning_gate_min_chars": planning_gate_min_chars,
+        "planning_target_total_chars": planning_target_total_chars,
         "planned_total_min_chars": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planned_total_min_chars", "0")),
         "planned_total_target_chars": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planned_total_target_chars", "0")),
         "planned_scene_count": _parse_int_from_text(_extract_state_scalar(state_schema_text, "planned_scene_count", "0")),

@@ -13,7 +13,7 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 - `agent/state_schema_novel.yaml`
 - `agent/memory/global_notes.md`
 - 対象プロジェクトの設定ファイル群
-- 対象プロジェクトの `05_chapter_outline_100k.md`
+- 対象プロジェクトの `05_chapter_outline.md`
 
 # Required Inputs
 
@@ -26,7 +26,7 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 
 - 既存の設定ファイルを順に読む
 - すでに確定している文体契約、禁止事項、進捗を確認する
-- `length_mode` が `long_form_100k` かどうかを確認する
+- `target_total_chars` / `target_length_profile` / `planning_gate_enabled` を確認する
 
 ## 2. 設定を埋めながら弱点を突く
 
@@ -36,7 +36,7 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 2. `02_character_sheet.md`
 3. `03_world_building.md`
 4. `04_plot_outline.md`
-5. `05_chapter_outline_100k.md`
+5. `05_chapter_outline.md`
 
 進める際は、単なる転記ではなく以下を必ず確認する。
 
@@ -48,7 +48,8 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 
 ## 3. 長編計画ゲートを作る
 
-- `long_form_100k` の場合は `05_chapter_outline_100k.md` を必須とする
+- `planning_gate_enabled=true` の場合は `05_chapter_outline.md` を正本として必須とする
+- legacy project では `05_chapter_outline_100k.md` を fallback として読んでよい
 - 各章について、以下を最低限埋める
 - 章の役割
 - 章の感情線
@@ -105,7 +106,7 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 
 - ユーザーの案を無批判に転記しない
 - 一度に大量の設定ファイルを見せない
-- `long_form_100k` なのに `05_chapter_outline_100k.md` を optional 扱いしない
+- `planning_gate_enabled=true` なのに `05_chapter_outline.md` を optional 扱いしない
+- legacy fallback を除き、`05_chapter_outline_100k.md` を canonical path のように扱わない
 - 計画ゲート未通過のまま、直近シーンの段取りや本文執筆へ進めない
-
 

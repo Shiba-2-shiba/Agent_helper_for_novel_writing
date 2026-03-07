@@ -18,7 +18,8 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - `runtime/request_compact.md`
 - `runtime/` に不足がある場合のみ `agent/state_schema_novel.yaml`
 - `runtime/` に不足がある場合のみ `agent/memory/global_notes.md`
-- `runtime/` に不足がある場合のみ対象章の `05_chapter_outline_100k.md` 該当箇所
+- `runtime/` に不足がある場合のみ対象章の `05_chapter_outline.md` 該当箇所
+- legacy project では `05_chapter_outline_100k.md` を fallback としてよい
 - `runtime/` に不足がある場合のみ直前シーンの `txt`
 - `body.md` は章の方向転換があった場合のみ補助的に参照する
 
@@ -49,6 +50,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - `runtime/draft_prompt.txt` がなければ、`runtime/style_contract_compact.md`、`runtime/scene_brief_compact.md`、`runtime/continuity_pack.md`、`runtime/request_compact.md` を読む
 - `runtime/planning_gate_brief.md` がある場合は、`Planning Gate` が `ready` かを本文執筆前に確認する
 - `runtime/scene_brief_compact.md` に `Scene Type` と `Length Band` がある場合は、それを文字数契約の正本として扱う
+- `Target Length Profile` は補助情報として扱い、本文長の制御自体は `Length Band` を正本とする
 - `runtime/` に不足がある場合のみ、対象シーンの章プロット、文体契約、進捗を補助参照する
 - `runtime/continuity_pack.md` を優先し、直前シーンの感情、位置関係、会話温度を引き継ぐ
 - 章の方針変更がある場合のみ `body.md` を確認する
@@ -109,10 +111,9 @@ description: Draft new scene prose for an existing novel project. Use when the u
 
 - 既存の `body.md` を本文集約先として使わない
 - 改稿や監査の責務を抱え込まない
-- `long_form_100k` で `planning_gate_status != ready` のまま初稿を書き始めない
+- `planning_gate_enabled=true` かつ `planning_gate_status != ready` のまま初稿を書き始めない
 - 文字数不足のまま完成扱いにしない
 - `runtime/scene_brief_compact.md` の `Length Band` があるのに、旧固定値だけで自己判定しない
 - 毎回フル文脈を読み直してクレジットを無駄に消費しない
 - `needs_expand=true` なのに全面再生成へ戻らない
-
 

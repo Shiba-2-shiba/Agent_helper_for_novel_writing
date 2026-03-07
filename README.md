@@ -1,6 +1,6 @@
 # 小説作成フレームワーク (Light Novel Writing Framework)
 
-10万字のライトノベル完成を目標とした、**構造化テンプレート**と**自動化スクリプト**、そして**Antigravity自律エージェント連携**のセットプロジェクトです。
+3万字 / 5万字 / 10万字の全体目標文字数に対応した、**構造化テンプレート**と**自動化スクリプト**、そして**Antigravity自律エージェント連携**のセットプロジェクトです。
 アイディア出しから設定の構築、そしてエージェントによる自動執筆ループまで、執筆の全工程をサポートします。
 
 ---
@@ -23,12 +23,12 @@
    アイディアが固まっていない状態からでも、Antigravityエージェントに壁打ち相手になってもらうことができます。
    *プロンプト例:*
    > 「`agent/HUB.md` を参照して、新しい小説の企画を一緒に考えて立ち上げて」
-   エージェントがHUBのルールに従って対話ロジックを起動し、ログラインの作成から設定ファイル（`01_concept_sheet.md` ～ `05_chapter_outline_100k.md`）の記入までインタラクティブにサポートします。
+   エージェントがHUBのルールに従って対話ロジックを起動し、ログラインの作成から設定ファイル（`01_concept_sheet.md` ～ `05_chapter_outline.md`）の記入までインタラクティブにサポートします。
 
    ※もちろん、手動でMDファイルを直接編集して設定を作り込むことも可能です。
 
 2. **エージェントへの指示（Antigravityチャットにて）**:
-   テンプレート（特に `05_chapter_outline_100k.md` のシーンマイルストーン）が用意できたら、チャットを通じてエージェントに自律執筆のループを開始させます。
+   テンプレート（特に `05_chapter_outline.md` のシーンマイルストーン）が用意できたら、チャットを通じてエージェントに自律執筆のループを開始させます。
    *プロンプト例:*
    > 「`agent/HUB.md` を参照して、{プロジェクト名}の第1章の執筆ループを開始して。」
 
@@ -74,8 +74,10 @@ python scripts/idea_generator.py
 #### ステップ2: プロジェクトを作成する
 ```bash
 # --from_ideas を付けると、ログラインが 01_concept_sheet.md に自動転記されます
-python scripts/init_project.py my_novel --from_ideas
+python scripts/init_project.py my_novel --target-total-chars 50000 --from_ideas
 ```
+
+`--target-total-chars` は `30000 / 50000 / 100000` の 3 択です。未指定時は互換性のため `100000` に fallback し、warning を出します。
 
 #### ステップ3: 標準の `runtime` フローで日常執筆を回す
 ```bash
@@ -120,7 +122,7 @@ python scripts/build_llm_prompt.py --project my_novel --chapter 1
 │   ├── 01_concept_sheet.md     
 │   ├── 02_character_sheet.md   
 │   ├── ...
-│   └── 05_chapter_outline_100k.md  
+│   └── 05_chapter_outline.md  
 ├── [your_project_name]/        # init_project.py が生成する執筆用フォルダ
 │   ├── 01_concept_sheet.md
 │   ├── ...
@@ -141,9 +143,15 @@ python scripts/build_llm_prompt.py --project my_novel --chapter 1
 
 ---
 
-## 💡 10万字達成のコツ（エージェント・人間共通）
+## 💡 目標文字数を完走するコツ（エージェント・人間共通）
 
-途中で挫折しない最大のコツは、`05_chapter_outline_100k.md` を使った進捗管理です。
-「今日は第1章のシーン3（約1000〜1500文字）だけを書く／エージェントに書かせる」というように、短いマイルストーンを日々クリアしていくことを意識してください。
-1シーンを短めに刻み、シーン数を増やして合計10万字へ積み上げるほうが、再送する文脈と再試行コストを抑えやすくなります。
+途中で挫折しない最大のコツは、`05_chapter_outline.md` を使った進捗管理です。
+「今日は第1章のシーン3だけを書く／エージェントに書かせる」というように、短いマイルストーンを日々クリアしていくことを意識してください。
+本文の長さ制御は `Target Length Profile` ではなく `Length Band` が正本です。`bridge` は薄く、`anchor` / `climax` は厚くするほうが、3万字 / 5万字 / 10万字のどの案件でも再送文脈と再試行コストを抑えやすくなります。
 エージェントに執筆させる場合でも、このアウトラインファイルが正確であればあるほど、出力のブレがなくなり長期連載が安定します。
+
+## Migration Note
+
+- 新規 project は `05_chapter_outline.md` と `targets.target_total_chars` / `targets.target_length_profile` を canonical source として生成します。
+- 既存 project は `05_chapter_outline_100k.md` と legacy `length_mode` を残したままでも、runtime / prompt scripts が fallback として読み取れます。
+- planning gate の判定は `planning_gate_enabled` と `planning_gate_status` を主条件に扱います。`long_form_100k` は legacy fallback 用語です。

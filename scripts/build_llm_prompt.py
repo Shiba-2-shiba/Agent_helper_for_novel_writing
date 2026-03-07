@@ -3,7 +3,14 @@ import re
 import sys
 import argparse
 
-from prompt_utils import DEFAULT_MAX_CHARS, DEFAULT_MIN_CHARS, DEFAULT_TARGET_CHARS
+from prompt_utils import (
+    DEFAULT_MAX_CHARS,
+    DEFAULT_MIN_CHARS,
+    DEFAULT_TARGET_CHARS,
+    load_target_length_profile,
+    resolve_outline_path,
+    resolve_project_path,
+)
 
 # スクリプトの場所を基準にプロジェクトルートを取得
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -119,7 +126,7 @@ def extract_chapter_block(outline_text, chapter_num):
 
 
 def parse_chapter_target_chars(chapter_block):
-    match = re.search(r"目標：?約?\s*([\d,]+)\s*字", chapter_block)
+    match = re.search(r"(?:想定目標字数|目標)[:：]?\s*約?\s*([\d,]+)\s*(?:字)?", chapter_block)
     if not match:
         return 0
     try:
@@ -309,34 +316,7 @@ def main():
         print("Error: expected min_chars <= target_chars <= max_chars.")
         sys.exit(1)
 
-    # S3修正: --project を絶対パスに解決（相対パスで渡された場合もBASE_DIR基準で解決）
-    if os.path.isabs(args.project):
-        project_dir = args.project
-    else:
-        # まずカレントディレクトリ基準、なければプロジェクトルート基準で探す
-        project_dir_cwd = os.path.abspath(args.project)
-        project_dir_base = os.path.join(BASE_DIR, args.project)
-        if os.path.exists(project_dir_cwd):
-            project_dir = project_dir_cwd
-        elif os.path.exists(project_dir_base):
-            project_dir = project_dir_base
-        else:
-            project_dir = project_dir_cwd  # エラーメッセージ用に残す
-
-
-    # S3修正: --project を絶対パスに解決（相対パスで渡された場合もBASE_DIR基準で解決）
-    if os.path.isabs(args.project):
-        project_dir = args.project
-    else:
-        # まずカレントディレクトリ基準、なければプロジェクトルート基準で探す
-        project_dir_cwd = os.path.abspath(args.project)
-        project_dir_base = os.path.join(BASE_DIR, args.project)
-        if os.path.exists(project_dir_cwd):
-            project_dir = project_dir_cwd
-        elif os.path.exists(project_dir_base):
-            project_dir = project_dir_base
-        else:
-            project_dir = project_dir_cwd  # エラーメッセージ用に残す
+    project_dir = resolve_project_path(args.project)
 
     if not os.path.exists(project_dir):
         print(f"Error: Project directory '{project_dir}' not found.")
@@ -349,7 +329,7 @@ def main():
     # S4修正: world と plot を追加
     world_path    = os.path.join(project_dir, "03_world_building.md")
     plot_path     = os.path.join(project_dir, "04_plot_outline.md")
-    outline_path  = os.path.join(project_dir, "05_chapter_outline_100k.md")
+    outline_path  = resolve_outline_path(project_dir)
 
     # Read files
     concept_text  = read_file_safe(concept_path)
@@ -357,6 +337,7 @@ def main():
     world_text_raw = read_file_safe(world_path)   # S4
     plot_text     = read_file_safe(plot_path)     # S4
     outline_text  = read_file_safe(outline_path)
+    target_profile = load_target_length_profile(project_dir)
 
     # フェーズ3: 対象章のブロックのみ抽出
     chapter_block = extract_chapter_block(outline_text, args.chapter)
@@ -442,6 +423,8 @@ def main():
 ```
 
 ### 6. 文字数契約 (Length Contract)
+- target_total_chars: {target_profile['target_total_chars']:,}
+- target_length_profile: {target_profile['target_length_profile']}
 - chapter_target_chars: {chapter_target_display}
 - chapter_written_chars: {chapter_written_chars:,}
 - chapter_remaining_chars: {chapter_remaining_display}

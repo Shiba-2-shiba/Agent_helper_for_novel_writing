@@ -15,10 +15,149 @@ import pytest
 # プロジェクトルート（tests/ の親）
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SCRIPTS_DIR  = os.path.join(PROJECT_ROOT, "scripts")
+TEMPLATES_DIR = os.path.join(PROJECT_ROOT, "templates")
 if SCRIPTS_DIR not in sys.path:
     sys.path.insert(0, SCRIPTS_DIR)
 
 from eval_skill_trigger_qa import route_prompt
+from prompt_utils import (
+    compute_gate_threshold,
+    compute_target_length_profile,
+    load_target_length_profile,
+    resolve_outline_path,
+    resolve_target_profile_from_state,
+    UserFacingError,
+)
+
+
+RUNTIME_OUTLINE_TEXT = """# Outline
+
+## 第1章 Chapter Card
+- 章の役割: 導入
+- 想定シーン数: 1
+- 想定最小字数: 1000
+- 想定目標字数: 1250
+
+### Scene Ledger
+| scene_id | scene_type | purpose | turn | payoff_or_seed | min | target | max | depends_on | status |
+|---|---|---|---|---|---:|---:|---:|---|---|
+| 1-1 | standard | 序盤の導入を置く | 平穏 -> 不穏 | 種まき | 1000 | 1250 | 1500 | - | planned |
+
+## 第2章 Chapter Card
+- 章の役割: 障害の提示
+- 想定シーン数: 3
+- 想定最小字数: 3000
+- 想定目標字数: 3750
+
+### Scene Ledger
+| scene_id | scene_type | purpose | turn | payoff_or_seed | min | target | max | depends_on | status |
+|---|---|---|---|---|---:|---:|---:|---|---|
+| 2-1 | standard | 主人公が新しい依頼を受ける | 日常 -> 予感 | 種まき | 1000 | 1250 | 1500 | 1-1 | planned |
+| 2-2 | standard | 仲間と合流し最初の障害にぶつかる | 警戒 -> 緊張 | 回収: 合流 / 種: 障害 | 1000 | 1250 | 1500 | 2-1 | planned |
+| 2-3 | standard | 障害を越えるために決断する | 逡巡 -> 決断 | 次章への推進力 | 1000 | 1250 | 1500 | 2-2 | planned |
+"""
+
+
+def copy_markdown_templates(project_dir, *, skip_names=None):
+    skip = set(skip_names or [])
+    for name in os.listdir(TEMPLATES_DIR):
+        if name.endswith(".md") and name not in skip:
+            shutil.copy2(os.path.join(TEMPLATES_DIR, name), str(project_dir / name))
+
+
+def write_utf8(path, content):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(content)
+
+
+def build_state_schema_text(
+    *,
+    target_total_chars=None,
+    target_length_profile="",
+    planning_gate_enabled=True,
+    planning_gate_min_chars=None,
+    planning_target_total_chars=None,
+    total_chars=None,
+    length_mode="",
+    planning_gate_status="ready",
+    planned_total_min_chars=4000,
+    planned_total_target_chars=5000,
+    planned_scene_count=4,
+):
+    lines = ["targets:"]
+    if target_total_chars is not None:
+        lines.append(f"  target_total_chars: {target_total_chars}")
+    if target_length_profile:
+        lines.append(f"  target_length_profile: {target_length_profile}")
+    if target_total_chars is not None or target_length_profile:
+        lines.append(f"  planning_gate_enabled: {'true' if planning_gate_enabled else 'false'}")
+    if planning_gate_min_chars is not None:
+        lines.append(f"  planning_gate_min_chars: {planning_gate_min_chars}")
+    if planning_target_total_chars is not None:
+        lines.append(f"  planning_target_total_chars: {planning_target_total_chars}")
+    if total_chars is not None:
+        lines.append(f"  total_chars: {total_chars}")
+    if length_mode:
+        lines.append(f"  length_mode: {length_mode}")
+    lines.extend(
+        [
+            "active_work:",
+            f"  planning_gate_status: {planning_gate_status}",
+            "progress:",
+            f"  planned_total_min_chars: {planned_total_min_chars}",
+            f"  planned_total_target_chars: {planned_total_target_chars}",
+            f"  planned_scene_count: {planned_scene_count}",
+            "narration_tense: 過去形",
+        ]
+    )
+    return "\n".join(lines) + "\n"
+
+
+def create_runtime_project(
+    tmp_path,
+    *,
+    outline_filename="05_chapter_outline_100k.md",
+    outline_text=RUNTIME_OUTLINE_TEXT,
+    state_schema_text=None,
+):
+    proj = tmp_path / "runtime_proj"
+    proj.mkdir()
+
+    write_utf8(str(proj / outline_filename), outline_text)
+    agent_memory = proj / "agent" / "memory"
+    agent_memory.mkdir(parents=True)
+    (agent_memory / "global_notes.md").write_text(
+        "## 文体契約\n"
+        "- 視点: 一人称（主人公）\n"
+        "- 地の文時制: 過去形\n"
+        "- 口調: 軽口を混ぜる\n"
+        "- 禁止: メタ発言\n",
+        encoding="utf-8",
+    )
+    (agent_memory / "session_notes.md").write_text(
+        "- 仲間との距離感はまだ固い\n"
+        "- 次の選択で信頼が揺れる\n",
+        encoding="utf-8",
+    )
+
+    if state_schema_text is None:
+        state_schema_text = build_state_schema_text(
+            length_mode="long_form_100k",
+            planning_gate_min_chars=3000,
+            planning_target_total_chars=4000,
+        )
+
+    write_utf8(str(proj / "agent" / "state_schema_novel.yaml"), state_schema_text)
+    (proj / "chapter_2_scene_1.txt").write_text(
+        "主人公は市場で奇妙な依頼書を受け取り、胸騒ぎを覚えた。",
+        encoding="utf-8",
+    )
+    (proj / "chapter_2_scene_2.txt").write_text(
+        "仲間と合流したが、橋は崩れ、先へ進むには危険な川を渡るしかなかった。",
+        encoding="utf-8",
+    )
+    return str(proj)
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +237,80 @@ class TestInitProject:
             if os.path.exists(ideas_path):
                 os.remove(ideas_path)
 
+    @pytest.mark.parametrize(
+        ("target_total_chars", "target_length_profile", "planning_gate_min_chars"),
+        [
+            (30000, "novel_30k", 24000),
+            (50000, "novel_50k", 40000),
+            (100000, "novel_100k", 80000),
+        ],
+    )
+    def test_canonical_init_project_writes_target_profile(
+        self,
+        tmp_path,
+        monkeypatch,
+        target_total_chars,
+        target_length_profile,
+        planning_gate_min_chars,
+    ):
+        """新規 project で canonical target fields と outline が生成されること"""
+        monkeypatch.chdir(PROJECT_ROOT)
+        project_name = str(tmp_path / f"target_{target_total_chars}")
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "init_project.py"),
+                project_name,
+                "--target-total-chars",
+                str(target_total_chars),
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+        state_schema_path = os.path.join(project_name, "agent", "state_schema_novel.yaml")
+        outline_path = os.path.join(project_name, "05_chapter_outline.md")
+        legacy_outline_path = os.path.join(project_name, "05_chapter_outline_100k.md")
+        global_notes_path = os.path.join(project_name, "agent", "memory", "global_notes.md")
+        session_notes_path = os.path.join(project_name, "agent", "memory", "session_notes.md")
+
+        assert os.path.isfile(state_schema_path)
+        assert os.path.isfile(outline_path)
+        assert not os.path.exists(legacy_outline_path)
+        assert os.path.isfile(global_notes_path)
+        assert os.path.isfile(session_notes_path)
+
+        state_schema_text = open(state_schema_path, "r", encoding="utf-8").read()
+        outline_text = open(outline_path, "r", encoding="utf-8").read()
+
+        assert f"target_total_chars: {target_total_chars}" in state_schema_text
+        assert f'target_length_profile: "{target_length_profile}"' in state_schema_text
+        assert "planning_gate_enabled: true" in state_schema_text
+        assert f"planning_gate_min_chars: {planning_gate_min_chars}" in state_schema_text
+        assert f"planning_target_total_chars: {target_total_chars}" in state_schema_text
+        assert "length_mode:" not in state_schema_text
+        assert f"- 全体目標文字数: {target_total_chars}" in outline_text
+        assert f"- 計画ゲート下限: {planning_gate_min_chars}" in outline_text
+
+    def test_legacy_default_target_total_chars_falls_back_to_100000_with_warning(self, tmp_path, monkeypatch):
+        """target 未指定時は 100000 に fallback し warning を出すこと"""
+        monkeypatch.chdir(PROJECT_ROOT)
+        project_name = str(tmp_path / "default_target_novel")
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "init_project.py"), project_name],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "WARN" in result.stdout
+        assert "100000" in result.stdout
+
+        state_schema_path = os.path.join(project_name, "agent", "state_schema_novel.yaml")
+        state_schema_text = open(state_schema_path, "r", encoding="utf-8").read()
+        assert "target_total_chars: 100000" in state_schema_text
+        assert 'target_length_profile: "novel_100k"' in state_schema_text
+
 
 # ---------------------------------------------------------------------------
 # build_llm_prompt.py のテスト
@@ -111,10 +324,7 @@ class TestBuildLLMPrompt:
         """サンプルプロジェクトを tmp_path 内に生成してパスを返す"""
         proj = tmp_path / "sample_proj"
         proj.mkdir()
-        templates_dir = os.path.join(PROJECT_ROOT, "templates")
-        for name in os.listdir(templates_dir):
-            if name.endswith(".md"):
-                shutil.copy2(os.path.join(templates_dir, name), str(proj / name))
+        copy_markdown_templates(proj)
         return str(proj)
 
     def test_generates_output_file(self, sample_project):
@@ -260,83 +470,191 @@ class TestBuildLLMPrompt:
         assert "逐次生成ルール" in content
         assert "`2-1`" in content
 
+    def test_legacy_build_llm_prompt_works_with_old_outline_only(self, tmp_path):
+        """legacy outline のみでも build_llm_prompt が動くこと"""
+        proj = tmp_path / "legacy_prompt_proj"
+        proj.mkdir()
+        copy_markdown_templates(proj, skip_names={"05_chapter_outline.md"})
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_llm_prompt.py"),
+                "--project",
+                str(proj),
+                "--chapter",
+                "1",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert os.path.isfile(os.path.join(proj, "llm_prompt_output.txt"))
+
+    def test_canonical_build_llm_prompt_works_with_new_outline_only(self, tmp_path):
+        """canonical outline のみでも build_llm_prompt が動くこと"""
+        proj = tmp_path / "canonical_prompt_proj"
+        proj.mkdir()
+        copy_markdown_templates(proj, skip_names={"05_chapter_outline_100k.md"})
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_llm_prompt.py"),
+                "--project",
+                str(proj),
+                "--chapter",
+                "1",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert os.path.isfile(os.path.join(proj, "llm_prompt_output.txt"))
+
+
+class TestTargetProfileResolvers:
+    """target profile resolver の互換レイヤ検証"""
+
+    def test_legacy_state_without_new_fields_resolves_to_100k_profile(self, tmp_path):
+        project_dir = tmp_path / "legacy_state_project"
+        write_utf8(
+            str(project_dir / "agent" / "state_schema_novel.yaml"),
+            build_state_schema_text(
+                length_mode="long_form_100k",
+                planning_gate_min_chars=80000,
+                planning_target_total_chars=100000,
+            ),
+        )
+
+        payload = load_target_length_profile(str(project_dir))
+
+        assert payload["target_total_chars"] == 100000
+        assert payload["target_length_profile"] == "novel_100k"
+        assert payload["planning_gate_enabled"] is True
+        assert payload["planning_gate_min_chars"] == 80000
+        assert payload["planning_target_total_chars"] == 100000
+        assert payload["source"] == "legacy_planning_target"
+
+    def test_legacy_length_mode_long_form_100k_maps_to_novel_100k(self):
+        payload = resolve_target_profile_from_state(
+            "targets:\n"
+            "  length_mode: long_form_100k\n"
+        )
+
+        assert payload["target_total_chars"] == 100000
+        assert payload["target_length_profile"] == "novel_100k"
+        assert payload["source"] == "legacy_length_mode"
+
+    def test_canonical_30k_state_resolves_to_30k_profile(self):
+        payload = resolve_target_profile_from_state(
+            build_state_schema_text(
+                target_total_chars=30000,
+                target_length_profile="novel_30k",
+                planning_gate_min_chars=24000,
+                planning_target_total_chars=30000,
+            )
+        )
+
+        assert payload["target_total_chars"] == 30000
+        assert payload["target_length_profile"] == "novel_30k"
+        assert payload["planning_gate_min_chars"] == 24000
+        assert payload["planning_target_total_chars"] == 30000
+        assert payload["source"] == "canonical_state"
+
+    def test_canonical_50k_state_resolves_to_50k_profile(self):
+        payload = resolve_target_profile_from_state(
+            build_state_schema_text(
+                target_total_chars=50000,
+                target_length_profile="novel_50k",
+                planning_gate_min_chars=40000,
+                planning_target_total_chars=50000,
+            )
+        )
+
+        assert payload["target_total_chars"] == 50000
+        assert payload["target_length_profile"] == "novel_50k"
+        assert payload["planning_gate_min_chars"] == 40000
+        assert payload["planning_target_total_chars"] == 50000
+        assert payload["source"] == "canonical_state"
+
+    def test_mixed_new_profile_with_legacy_fields_present_prefers_new_fields(self):
+        payload = resolve_target_profile_from_state(
+            build_state_schema_text(
+                target_total_chars=50000,
+                target_length_profile="novel_50k",
+                planning_gate_min_chars=40000,
+                planning_target_total_chars=50000,
+                total_chars=100000,
+                length_mode="long_form_100k",
+            )
+        )
+
+        assert payload["target_total_chars"] == 50000
+        assert payload["target_length_profile"] == "novel_50k"
+        assert payload["planning_gate_min_chars"] == 40000
+        assert payload["planning_target_total_chars"] == 50000
+        assert payload["source"] == "canonical_state"
+
+    def test_legacy_outline_filename_is_discoverable(self, tmp_path):
+        project_dir = tmp_path / "legacy_outline_project"
+        project_dir.mkdir()
+        write_utf8(str(project_dir / "05_chapter_outline_100k.md"), "# legacy outline\n")
+
+        resolved = resolve_outline_path(str(project_dir), require_exists=True)
+
+        assert resolved.endswith("05_chapter_outline_100k.md")
+
+    def test_canonical_outline_filename_is_preferred_when_present(self, tmp_path):
+        project_dir = tmp_path / "canonical_outline_project"
+        project_dir.mkdir()
+        write_utf8(str(project_dir / "05_chapter_outline_100k.md"), "# legacy outline\n")
+        write_utf8(str(project_dir / "05_chapter_outline.md"), "# canonical outline\n")
+
+        resolved = resolve_outline_path(str(project_dir), require_exists=True)
+
+        assert resolved.endswith("05_chapter_outline.md")
+
+    @pytest.mark.parametrize(
+        ("target_total_chars", "target_length_profile", "planning_gate_min_chars"),
+        [
+            (30000, "novel_30k", 24000),
+            (50000, "novel_50k", 40000),
+            (100000, "novel_100k", 80000),
+        ],
+    )
+    def test_compute_gate_threshold_matches_profile(
+        self,
+        target_total_chars,
+        target_length_profile,
+        planning_gate_min_chars,
+    ):
+        assert compute_target_length_profile(target_total_chars) == target_length_profile
+        assert compute_gate_threshold(target_total_chars) == planning_gate_min_chars
+
+    def test_invalid_target_total_chars_fails_fast(self):
+        with pytest.raises(UserFacingError, match="unsupported target_total_chars: 75000"):
+            resolve_target_profile_from_state(
+                build_state_schema_text(
+                    target_total_chars=75000,
+                    planning_gate_min_chars=60000,
+                    planning_target_total_chars=75000,
+                )
+            )
+
+    def test_invalid_target_length_profile_fails_fast(self):
+        with pytest.raises(UserFacingError, match="unsupported target_length_profile: novel_70k"):
+            resolve_target_profile_from_state(
+                build_state_schema_text(
+                    target_length_profile="novel_70k",
+                )
+            )
+
 
 class TestRuntimeRefactorScripts:
     """runtime 系スクリプトの動作検証"""
 
     @pytest.fixture()
     def runtime_project(self, tmp_path):
-        proj = tmp_path / "runtime_proj"
-        proj.mkdir()
-
-        outline = """# Outline
-
-## 第1章 Chapter Card
-- 章の役割: 導入
-- 想定シーン数: 1
-- 想定最小字数: 1000
-- 想定目標字数: 1250
-
-### Scene Ledger
-| scene_id | scene_type | purpose | turn | payoff_or_seed | min | target | max | depends_on | status |
-|---|---|---|---|---|---:|---:|---:|---|---|
-| 1-1 | standard | 序盤の導入を置く | 平穏 -> 不穏 | 種まき | 1000 | 1250 | 1500 | - | planned |
-
-## 第2章 Chapter Card
-- 章の役割: 障害の提示
-- 想定シーン数: 3
-- 想定最小字数: 3000
-- 想定目標字数: 3750
-
-### Scene Ledger
-| scene_id | scene_type | purpose | turn | payoff_or_seed | min | target | max | depends_on | status |
-|---|---|---|---|---|---:|---:|---:|---|---|
-| 2-1 | standard | 主人公が新しい依頼を受ける | 日常 -> 予感 | 種まき | 1000 | 1250 | 1500 | 1-1 | planned |
-| 2-2 | standard | 仲間と合流し最初の障害にぶつかる | 警戒 -> 緊張 | 回収: 合流 / 種: 障害 | 1000 | 1250 | 1500 | 2-1 | planned |
-| 2-3 | standard | 障害を越えるために決断する | 逡巡 -> 決断 | 次章への推進力 | 1000 | 1250 | 1500 | 2-2 | planned |
-"""
-        (proj / "05_chapter_outline_100k.md").write_text(outline, encoding="utf-8")
-
-        agent_memory = proj / "agent" / "memory"
-        agent_memory.mkdir(parents=True)
-        (agent_memory / "global_notes.md").write_text(
-            "## 文体契約\n"
-            "- 視点: 一人称（主人公）\n"
-            "- 地の文時制: 過去形\n"
-            "- 口調: 軽口を混ぜる\n"
-            "- 禁止: メタ発言\n",
-            encoding="utf-8",
-        )
-        (agent_memory / "session_notes.md").write_text(
-            "- 仲間との距離感はまだ固い\n"
-            "- 次の選択で信頼が揺れる\n",
-            encoding="utf-8",
-        )
-        state_schema = proj / "agent" / "state_schema_novel.yaml"
-        state_schema.write_text(
-            "targets:\n"
-            "  length_mode: long_form_100k\n"
-            "  planning_gate_min_chars: 3000\n"
-            "  planning_target_total_chars: 4000\n"
-            "active_work:\n"
-            "  planning_gate_status: ready\n"
-            "progress:\n"
-            "  planned_total_min_chars: 4000\n"
-            "  planned_total_target_chars: 5000\n"
-            "  planned_scene_count: 4\n"
-            "narration_tense: 過去形\n",
-            encoding="utf-8",
-        )
-
-        (proj / "chapter_2_scene_1.txt").write_text(
-            "主人公は市場で奇妙な依頼書を受け取り、胸騒ぎを覚えた。",
-            encoding="utf-8",
-        )
-        (proj / "chapter_2_scene_2.txt").write_text(
-            "仲間と合流したが、橋は崩れ、先へ進むには危険な川を渡るしかなかった。",
-            encoding="utf-8",
-        )
-        return str(proj)
+        return create_runtime_project(tmp_path)
 
     def test_runtime_flow_generates_compact_files_and_expand_prompt(self, runtime_project):
         runtime_result = subprocess.run(
@@ -370,7 +688,20 @@ class TestRuntimeRefactorScripts:
         planning_gate_brief = open(os.path.join(runtime_dir, "planning_gate_brief.md"), "r", encoding="utf-8").read()
         assert "Planning Gate: ready" in planning_gate_brief
         assert "Planned Total Min Chars: 4000" in planning_gate_brief
+        assert "Target Total Chars: 100000" in planning_gate_brief
+        assert "Target Length Profile: novel_100k" in planning_gate_brief
+        assert "Planning Gate Enabled: true" in planning_gate_brief
         assert "Next Planning Action:" in planning_gate_brief
+
+        request_compact = open(os.path.join(runtime_dir, "request_compact.md"), "r", encoding="utf-8").read()
+        assert "- Target Total Chars: 100000" in request_compact
+        assert "- Target Length Profile: novel_100k" in request_compact
+        assert "- Planning Gate Enabled: true" in request_compact
+
+        scene_brief = open(os.path.join(runtime_dir, "scene_brief_compact.md"), "r", encoding="utf-8").read()
+        assert "Target Total Chars: 100000" in scene_brief
+        assert "Target Length Profile: novel_100k" in scene_brief
+        assert "Planning Gate Enabled: true" in scene_brief
 
         continuity = open(os.path.join(runtime_dir, "continuity_pack.md"), "r", encoding="utf-8").read()
         assert "chapter_2_scene_2.txt" in continuity
@@ -480,6 +811,152 @@ class TestRuntimeRefactorScripts:
         assert "それでも足を止める理由にはならない" in updated_text
         assert updated_text.index("彼は返事の意味を測りかねて") < updated_text.index("主人公は息を整えた。")
 
+    def test_legacy_runtime_context_works_with_old_outline_only(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline_100k.md")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert os.path.isfile(os.path.join(project_dir, "runtime", "scene_brief_compact.md"))
+
+    def test_canonical_runtime_context_works_with_new_outline_only(self, tmp_path):
+        project_dir = create_runtime_project(
+            tmp_path,
+            outline_filename="05_chapter_outline.md",
+            state_schema_text=build_state_schema_text(
+                target_total_chars=50000,
+                target_length_profile="novel_50k",
+                planning_gate_min_chars=40000,
+                planning_target_total_chars=50000,
+            ),
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        planning_gate_brief = open(
+            os.path.join(project_dir, "runtime", "planning_gate_brief.md"),
+            "r",
+            encoding="utf-8",
+        ).read()
+        assert "Target Total Chars: 50000" in planning_gate_brief
+        assert "Target Length Profile: novel_50k" in planning_gate_brief
+
+    def test_mixed_new_state_with_legacy_outline_passes(self, tmp_path):
+        project_dir = create_runtime_project(
+            tmp_path,
+            outline_filename="05_chapter_outline_100k.md",
+            state_schema_text=build_state_schema_text(
+                target_total_chars=30000,
+                target_length_profile="novel_30k",
+                planning_gate_min_chars=24000,
+                planning_target_total_chars=30000,
+                total_chars=100000,
+                length_mode="long_form_100k",
+            ),
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        planning_gate_brief = open(
+            os.path.join(project_dir, "runtime", "planning_gate_brief.md"),
+            "r",
+            encoding="utf-8",
+        ).read()
+        request_compact = open(
+            os.path.join(project_dir, "runtime", "request_compact.md"),
+            "r",
+            encoding="utf-8",
+        ).read()
+        assert "Target Total Chars: 30000" in planning_gate_brief
+        assert "Target Length Profile: novel_30k" in planning_gate_brief
+        assert "- Target Total Chars: 30000" in request_compact
+        assert "- Target Length Profile: novel_30k" in request_compact
+        assert "- Length Mode: long_form_100k" in request_compact
+
+    def test_mixed_legacy_state_with_new_outline_passes(self, tmp_path):
+        project_dir = create_runtime_project(
+            tmp_path,
+            outline_filename="05_chapter_outline.md",
+            state_schema_text=build_state_schema_text(
+                length_mode="long_form_100k",
+                planning_gate_min_chars=80000,
+                planning_target_total_chars=100000,
+            ),
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        planning_gate_brief = open(
+            os.path.join(project_dir, "runtime", "planning_gate_brief.md"),
+            "r",
+            encoding="utf-8",
+        ).read()
+        assert "Target Total Chars: 100000" in planning_gate_brief
+        assert "Target Length Profile: novel_100k" in planning_gate_brief
+
     def test_build_draft_prompt_fails_when_runtime_inputs_are_missing(self, tmp_path):
         project_dir = tmp_path / "missing_runtime"
         runtime_dir = project_dir / "runtime"
@@ -516,6 +993,70 @@ class TestRuntimeRefactorScripts:
             "# Request Compact\n"
             "- Length Mode: long_form_100k\n"
             "- Planning Gate: blocked\n",
+            encoding="utf-8",
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_draft_prompt.py"),
+                "--project",
+                str(project_dir),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 1
+        assert "planning_gate_status is not ready" in result.stdout
+        assert not os.path.exists(os.path.join(runtime_dir, "draft_prompt.txt"))
+
+    @pytest.mark.parametrize(
+        ("target_total_chars", "target_length_profile", "planning_gate_min_chars"),
+        [
+            (30000, "novel_30k", 24000),
+            (50000, "novel_50k", 40000),
+            (100000, "novel_100k", 80000),
+        ],
+    )
+    def test_canonical_build_draft_prompt_fails_when_planning_gate_is_blocked(
+        self,
+        tmp_path,
+        target_total_chars,
+        target_length_profile,
+        planning_gate_min_chars,
+    ):
+        project_dir = tmp_path / f"blocked_{target_total_chars}"
+        runtime_dir = project_dir / "runtime"
+        runtime_dir.mkdir(parents=True)
+        (runtime_dir / "style_contract_compact.md").write_text("# Style Contract Compact", encoding="utf-8")
+        (runtime_dir / "scene_brief_compact.md").write_text(
+            "# Scene Brief Compact\n"
+            f"Target Total Chars: {target_total_chars}\n"
+            f"Target Length Profile: {target_length_profile}\n"
+            "Planning Gate Enabled: true\n"
+            "Scene Type: standard\n"
+            "Length Band: 1000 / 1250 / 1500\n"
+            "- Planning Gate: blocked\n",
+            encoding="utf-8",
+        )
+        (runtime_dir / "continuity_pack.md").write_text("# Continuity Pack", encoding="utf-8")
+        (runtime_dir / "request_compact.md").write_text(
+            "# Request Compact\n"
+            f"- Target Total Chars: {target_total_chars}\n"
+            f"- Target Length Profile: {target_length_profile}\n"
+            "- Planning Gate Enabled: true\n"
+            "- Planning Gate: blocked\n"
+            "- Target Band: 1000 / 1250 / 1500\n",
+            encoding="utf-8",
+        )
+        (runtime_dir / "planning_gate_brief.md").write_text(
+            "# Planning Gate Brief\n"
+            f"Target Total Chars: {target_total_chars}\n"
+            f"Target Length Profile: {target_length_profile}\n"
+            "Planning Gate Enabled: true\n"
+            f"Planning Gate Min Chars: {planning_gate_min_chars}\n"
+            "Planning Gate: blocked\n",
             encoding="utf-8",
         )
 
@@ -574,6 +1115,10 @@ class TestRuntimeRefactorScripts:
 
     def test_route_prompt_prefers_setting_creator_for_blocked_planning_gate(self):
         prompt = "long_form_100k の planning gate が blocked なので scene inventory を増やしたい。"
+        assert route_prompt(prompt) == "setting-creator"
+
+    def test_route_prompt_prefers_setting_creator_for_blocked_planning_gate_with_canonical_wording(self):
+        prompt = "planning_gate_enabled=true の案件で planning gate が blocked なので scene inventory を増やしたい。"
         assert route_prompt(prompt) == "setting-creator"
 
     def test_check_scene_output_does_not_flag_plain_ai_word_as_meta(self, tmp_path):

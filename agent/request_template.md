@@ -10,7 +10,9 @@
 - `Purpose` と `Deliverables` は必須
 - 本文の正本はシーン単位 `txt`
 - 通常運用では `body.md` を本文追記先として指定しない
-- `long_form_100k` では固定 `1000-1500` ではなく、`scene_type` ごとの `Length Band` を使う
+- `Target Total Chars` を最初に決める
+- `Target Length Profile` は補助ラベルであり、本文長の正本は `Length Band`
+- `planning_gate_enabled=true` の profile では固定 `1000-1500` ではなく、`scene_type` ごとの `Length Band` を使う
 - 低クレジット運用では、`bridge` を短く保ち、`anchor` / `climax` だけを厚くする
 - 必須項目だけで依頼してよい。細部は `Context` と `Notes` で補う
 - `Mode` を書く場合は、`HUB.md` の正式モード名をそのまま使う
@@ -56,8 +58,8 @@
 
 ## Constraints
 - 命名ルール
-- `Length Mode`（例: `standard` / `long_form_100k`）
-- `Target Total Chars`（必要なら）
+- `Target Total Chars`（`30000` / `50000` / `100000`）
+- `Target Length Profile`（`novel_30k` / `novel_50k` / `novel_100k`）
 - `Prefer Low Credit Mode`（yes / no）
 ```
 
@@ -138,7 +140,8 @@
 - 視点
 - 禁止表現
 - 残したいフック
-- `Length Mode`
+- `Target Total Chars`
+- `Target Length Profile`
 - `Prefer Low Credit Mode`
 ```
 
@@ -245,7 +248,13 @@
 ## Priority（あれば）
 速さ優先 / 品質優先 / バランス重視
 
-## Length Mode（あれば）
+## Target Total Chars（あれば）
+30000 / 50000 / 100000
+
+## Target Length Profile（あれば）
+novel_30k / novel_50k / novel_100k
+
+## Length Mode（legacy fallback のみ）
 short / standard / long_form_100k
 
 ## Prefer Low Credit Mode（あれば）
@@ -266,7 +275,7 @@ idea_generation / project_bootstrap / setting_creation / scene_planning / novel 
 
 ```md
 idea_generation: 学園ラブコメの企画を壁打ちしたい。会話強めで考えたい。
-project_bootstrap: このログラインで案件を立ち上げたい。保存先は novels 配下。
+project_bootstrap: このログラインで案件を立ち上げたい。保存先は novels 配下。Target Total Chars は 50000。
 setting_creation: 主人公の動機と世界の制約を固めたい。ご都合主義は避けたい。
 scene_planning: 第3章の次の 2 シーンだけ段取りを決めたい。
 novel: 第3章シーン2の初稿を書いて。直前は 3-1。
@@ -291,13 +300,14 @@ resume_orchestrator: 今どこから再開すべきか整理して。
 - 出力: 本文初稿
 
 ## Context
-- `05_chapter_outline_100k.md` の第2章シーン1
+- `05_chapter_outline.md` の第2章シーン1
 - 直前は `chapter_1_scene_8.txt`
 
 ## Constraints
 - 視点は三人称（主人公寄り）
 - 見出しや箇条書きは本文に入れない
-- Length Mode: long_form_100k
+- Target Total Chars: 100000
+- Target Length Profile: novel_100k
 - Prefer Low Credit Mode: yes
 
 ## Notes

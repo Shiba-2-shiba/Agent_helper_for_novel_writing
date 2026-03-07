@@ -13,11 +13,12 @@ description: Plan the next chapter or the next one to three scenes before drafti
 - 対象プロジェクトの `runtime/planning_gate_brief.md`（あれば最優先で gate 状態を確認）
 - 対象プロジェクトの `runtime/scene_brief_compact.md`（対象シーンと一致する場合は最優先）
 - `runtime/scene_brief_compact.md` がない場合は、対象プロジェクトの `state_schema_novel.yaml`
-- `long_form_100k` や planning gate 確認が必要な場合は、対象プロジェクトの `state_schema_novel.yaml`
+- target profile や planning gate 確認が必要な場合は、対象プロジェクトの `state_schema_novel.yaml`
 - 対象プロジェクトの `runtime/style_contract_compact.md`（あれば）
 - 対象プロジェクトの `runtime/continuity_pack.md`（あれば）
 - 対象プロジェクトの `memory/global_notes.md`
-- 対象プロジェクトの `memory/05_chapter_outline_100k.md`
+- 対象プロジェクトの `05_chapter_outline.md`
+- legacy project では `05_chapter_outline_100k.md` を fallback として読む
 - 必要なら対象シーンの `txt` または直前シーンの `txt`
 
 # Required Inputs
@@ -44,7 +45,7 @@ description: Plan the next chapter or the next one to three scenes before drafti
 - `runtime/planning_gate_brief.md` がある場合は、その `Planning Gate` と `Next Planning Action` を先に確認する
 - 直近で確定している章方針と未解決要素を確認する
 - 直前シーンとの接続条件を確認する
-- `long_form_100k` で `planning_gate_status != ready` の場合は、シーン段取りへ進まず `setting-creator` へ戻す
+- `planning_gate_enabled=true` かつ `planning_gate_status != ready` の場合は、シーン段取りへ進まず `setting-creator` へ戻す
 - 章指定のみで、対象章のシーン `txt` がすでに存在する場合は、「未着手シーンを新規に作る」前提にせず、まず再整理対象の既存シーンを 1 つ決める
 - 章指定のみで既存シーンが複数ある場合は、以下の順で再整理対象を 1 つ決める
 - `scene_brief` と一致するシーン
@@ -75,7 +76,8 @@ description: Plan the next chapter or the next one to three scenes before drafti
 - `Read First` は、以下の優先順で最大 3 件までに絞る
 - 対象と一致する `runtime/scene_brief_compact.md`
 - stale 判定になった `runtime/scene_brief_compact.md` は `Read First` に含めない
-- 対象章の `memory/05_chapter_outline_100k.md`
+- 対象章の `05_chapter_outline.md`
+- legacy project では `05_chapter_outline_100k.md`
 - 既存シーンを再整理する場合は、その対象シーンの `txt`
 - 直前との接続確認が必要な場合は、対象シーンの 1 つ前の `txt`
 - 世界観や制約の補足が不足する場合のみ `memory/global_notes.md`
@@ -83,7 +85,7 @@ description: Plan the next chapter or the next one to three scenes before drafti
 - 次に書くシーンを 1 つに絞る
 - 参照ファイルは最大 3 件までに絞る
 - 骨格不足が見つかった場合のみ `agent/skills/setting-creator/SKILL.md` へ戻す
-- `long_form_100k` で `planning_gate_status != ready` の場合は、`Write Next` を返さず `agent/skills/setting-creator/SKILL.md` への差し戻しを優先する
+- `planning_gate_enabled=true` かつ `planning_gate_status != ready` の場合は、`Write Next` を返さず `agent/skills/setting-creator/SKILL.md` への差し戻しを優先する
 
 # Handoff
 
@@ -106,9 +108,8 @@ description: Plan the next chapter or the next one to three scenes before drafti
 # Do Not
 
 - 長編全体の骨格設計まで巻き取らない
-- `long_form_100k` で `planning_gate_status != ready` のまま執筆直前段取りへ進めない
+- `planning_gate_enabled=true` かつ `planning_gate_status != ready` のまま執筆直前段取りへ進めない
 - 本文初稿を書き始めない
 - 監査や改稿の責務を混ぜない
 - 次に書く対象を複数候補のまま終えない
-
 

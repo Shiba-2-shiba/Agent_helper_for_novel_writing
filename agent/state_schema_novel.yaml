@@ -23,14 +23,17 @@ profile:
   pov_default: "" # 例: "三人称（主人公寄り）"
 
 targets:
+  target_total_chars: 100000
+  target_length_profile: "novel_100k"
+  planning_gate_enabled: true
+  planning_gate_min_chars: 80000
+  planning_target_total_chars: 100000
   total_chars: 100000
   chapter_chars: {} # 例: {"1": 18000, "2": 20000, "3": 20000, "4": 26000, "5": 16000}
   scene_default_chars: 1250 # 旧運用互換。`long_form_100k` では `scene_type_bands` を優先
   scene_min_chars: 1000 # 旧運用互換
   scene_max_chars: 1500 # 旧運用互換
-  length_mode: "long_form_100k" # one of: short / standard / long_form_100k
-  planning_gate_min_chars: 80000
-  planning_target_total_chars: 100000
+  length_mode: "long_form_100k" # legacy fallback only。new project write-path では使わない
   scene_type_bands:
     bridge:
       min: 1200
@@ -80,7 +83,7 @@ active_work:
   active_chapter: 0 # 例: 3
   active_scene: "" # 例: "3-2"
   next_action: "" # 例: "scene 3-2 の初稿を作成"
-  files_to_check_first: [] # 例: ["05_chapter_outline_100k.md", "chapter_3_scene_1.txt"]
+  files_to_check_first: [] # 例: ["05_chapter_outline.md", "chapter_3_scene_1.txt"]
   planning_gate_status: "" # one of: blocked / ready
   current_scene_type: "" # 例: bridge / standard / anchor / climax
 

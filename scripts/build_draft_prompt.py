@@ -39,16 +39,35 @@ def parse_scene_brief_metadata(scene_brief):
 
 def parse_request_compact_metadata(request_compact):
     planning_gate_match = re.search(r"(?m)^- Planning Gate:\s*(.+)$", request_compact)
+    planning_gate_enabled_match = re.search(r"(?m)^- Planning Gate Enabled:\s*(.+)$", request_compact)
+    length_mode_match = re.search(r"(?m)^- Length Mode:\s*(.+)$", request_compact)
     return {
         "planning_gate_status": planning_gate_match.group(1).strip().lower() if planning_gate_match else "",
+        "planning_gate_enabled": _parse_bool_text(
+            planning_gate_enabled_match.group(1).strip() if planning_gate_enabled_match else ""
+        ),
+        "length_mode": length_mode_match.group(1).strip() if length_mode_match else "",
     }
 
 
 def parse_planning_gate_brief_metadata(planning_gate_brief):
     planning_gate_match = re.search(r"(?m)^Planning Gate:\s*(.+)$", planning_gate_brief)
+    planning_gate_enabled_match = re.search(r"(?m)^Planning Gate Enabled:\s*(.+)$", planning_gate_brief)
     return {
         "planning_gate_status": planning_gate_match.group(1).strip().lower() if planning_gate_match else "",
+        "planning_gate_enabled": _parse_bool_text(
+            planning_gate_enabled_match.group(1).strip() if planning_gate_enabled_match else ""
+        ),
     }
+
+
+def _parse_bool_text(raw_value):
+    cleaned = str(raw_value or "").strip().lower()
+    if cleaned in {"true", "yes", "on", "1"}:
+        return True
+    if cleaned in {"false", "no", "off", "0"}:
+        return False
+    return None
 
 
 def main():
@@ -85,7 +104,13 @@ def main():
     planning_gate_meta = parse_planning_gate_brief_metadata(planning_gate_brief)
 
     planning_gate_status = planning_gate_meta["planning_gate_status"] or request_meta["planning_gate_status"]
-    if planning_gate_status and planning_gate_status not in {"ready", "unknown"}:
+    planning_gate_enabled = planning_gate_meta["planning_gate_enabled"]
+    if planning_gate_enabled is None:
+        planning_gate_enabled = request_meta["planning_gate_enabled"]
+    if planning_gate_enabled is None:
+        planning_gate_enabled = request_meta["length_mode"] == "long_form_100k" or bool(planning_gate_status)
+
+    if planning_gate_enabled and planning_gate_status and planning_gate_status not in {"ready", "unknown"}:
         raise UserFacingError(
             "planning_gate_status is not ready; complete long-form planning before generating draft_prompt.txt"
         )
