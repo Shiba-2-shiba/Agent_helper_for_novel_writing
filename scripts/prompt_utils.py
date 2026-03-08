@@ -1,6 +1,7 @@
 import json
 import os
 import re
+from datetime import datetime, timezone
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -10,7 +11,10 @@ DEFAULT_TARGET_CHARS = 1250
 DEFAULT_MAX_CHARS = 1500
 RUNTIME_PROMPT_WARN_LIMIT = 8000
 RUNTIME_CONTINUITY_WARN_LIMIT = 1500
-SCENE_FILENAME_RE = re.compile(r"^chapter_?(\d+)_scene_?(\d+)\.txt$", re.IGNORECASE)
+SCENE_FILENAME_RE = re.compile(
+    r"^(?:chapter_?(\d+)_scene_?(\d+)|scene_(\d+)-(\d+))\.txt$",
+    re.IGNORECASE,
+)
 CANONICAL_OUTLINE_FILENAME = "05_chapter_outline.md"
 LEGACY_OUTLINE_FILENAME = "05_chapter_outline_100k.md"
 TARGET_PROFILE_SPECS = {
@@ -30,6 +34,13 @@ TARGET_PROFILE_SPECS = {
 TARGET_TOTAL_CHARS_BY_PROFILE = {
     spec["target_length_profile"]: total_chars
     for total_chars, spec in TARGET_PROFILE_SPECS.items()
+}
+CHAPTER_DIR_HINTS = {
+    1: "chapter_1_introduction",
+    2: "chapter_2_rising_action",
+    3: "chapter_3_complication",
+    4: "chapter_4_climax",
+    5: "chapter_5_resolution",
 }
 
 
@@ -189,6 +200,74 @@ def parse_scene_reference(scene_raw):
         "scene_token": f"chapter_{chapter_num}_scene_{scene_num}",
         "filename": f"chapter_{chapter_num}_scene_{scene_num}.txt",
     }
+
+
+def runtime_scene_key(scene_ref):
+    return scene_ref["canonical_id"]
+
+
+def runtime_scene_dir(project_dir, scene_ref, mode):
+    return os.path.join(project_dir, "runtime", "scenes", runtime_scene_key(scene_ref), mode)
+
+
+def runtime_root_dir(project_dir):
+    return os.path.join(project_dir, "runtime")
+
+
+def runtime_index_path(project_dir):
+    return os.path.join(runtime_root_dir(project_dir), "runtime_index.json")
+
+
+def read_runtime_index(project_dir):
+    path = runtime_index_path(project_dir)
+    if not os.path.isfile(path):
+        return {"latest_by_mode": {}}
+    try:
+        payload = json.loads(read_text_file(path))
+    except json.JSONDecodeError:
+        return {"latest_by_mode": {}}
+    if not isinstance(payload, dict):
+        return {"latest_by_mode": {}}
+    payload.setdefault("latest_by_mode", {})
+    return payload
+
+
+def write_runtime_index(project_dir, payload):
+    payload.setdefault("latest_by_mode", {})
+    write_json_file(runtime_index_path(project_dir), payload)
+
+
+def update_runtime_index(project_dir, *, mode, scene_ref, runtime_dir):
+    payload = read_runtime_index(project_dir)
+    payload["latest_by_mode"][mode] = {
+        "chapter": scene_ref["chapter"],
+        "scene": scene_ref["scene"],
+        "scene_id": scene_ref["canonical_id"],
+        "runtime_dir": runtime_dir,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    write_runtime_index(project_dir, payload)
+    return payload
+
+
+def resolve_runtime_dir(project_dir, *, mode="", scene_ref=None, runtime_dir_arg=""):
+    if runtime_dir_arg:
+        return resolve_relative_path(runtime_dir_arg, base_dirs=[project_dir], must_exist=True)
+
+    if scene_ref is not None:
+        candidate = runtime_scene_dir(project_dir, scene_ref, mode or "draft")
+        if os.path.isdir(candidate):
+            return candidate
+
+    payload = read_runtime_index(project_dir)
+    if mode:
+        latest = payload.get("latest_by_mode", {}).get(mode)
+        if latest:
+            candidate = latest.get("runtime_dir", "")
+            if candidate and os.path.isdir(candidate):
+                return candidate
+
+    return runtime_root_dir(project_dir)
 
 
 def extract_chapter_block(outline_text, chapter_num):
@@ -364,14 +443,73 @@ def compute_planned_totals(outline_text):
 
 
 def _extract_state_schema_text(project_dir):
-    state_schema_path = _find_first_existing(
+    state_schema_path = find_state_schema_path(project_dir)
+    if state_schema_path is None:
+        return ""
+    return read_text_file(state_schema_path)
+
+
+def find_state_schema_path(project_dir):
+    return _find_first_existing(
         os.path.join(project_dir, "agent", "state_schema_novel.yaml"),
         os.path.join(project_dir, "state_schema_novel.yaml"),
         os.path.join(project_dir, "state", "state_schema_novel.yaml"),
     )
-    if state_schema_path is None:
+
+
+def _yaml_scalar_text(value):
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    text = str(value)
+    escaped = text.replace("\\", "\\\\").replace('"', '\\"')
+    return f'"{escaped}"'
+
+
+def update_state_schema_text(text, updates_by_section):
+    lines = text.splitlines()
+
+    for section, values in updates_by_section.items():
+        section_index = None
+        for index, line in enumerate(lines):
+            if line.strip() == f"{section}:":
+                section_index = index
+                break
+        if section_index is None:
+            continue
+
+        section_end = len(lines)
+        for index in range(section_index + 1, len(lines)):
+            line = lines[index]
+            if line and not line.startswith(" "):
+                section_end = index
+                break
+
+        for key, value in values.items():
+            key_line = f"  {key}: {_yaml_scalar_text(value)}"
+            replaced = False
+            for index in range(section_index + 1, section_end):
+                if re.match(rf"^\s{{2}}{re.escape(key)}:\s*", lines[index]):
+                    lines[index] = key_line
+                    replaced = True
+                    break
+            if not replaced:
+                lines.insert(section_end, key_line)
+                section_end += 1
+
+    return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
+
+
+def sync_state_schema(project_dir, updates_by_section):
+    path = find_state_schema_path(project_dir)
+    if path is None:
         return ""
-    return read_text_file(state_schema_path)
+    original = read_text_file(path)
+    updated = update_state_schema_text(original, updates_by_section)
+    if updated != original:
+        write_text_file(path, updated)
+    return path
 
 
 def _extract_state_scalar(text, key, default_value=""):
@@ -600,8 +738,8 @@ def _collect_scene_metadata(project_dir):
             match = SCENE_FILENAME_RE.match(name)
             if not match:
                 continue
-            chapter_num = int(match.group(1))
-            scene_num = int(match.group(2))
+            chapter_num = int(match.group(1) or match.group(3))
+            scene_num = int(match.group(2) or match.group(4))
             path = os.path.join(root, name)
             key = (chapter_num, scene_num)
             current = found.get(key)
@@ -615,6 +753,10 @@ def _collect_scene_metadata(project_dir):
     return sorted(found.values(), key=lambda item: (item["chapter"], item["scene"], item["path"]))
 
 
+def collect_scene_metadata(project_dir):
+    return _collect_scene_metadata(project_dir)
+
+
 def count_chapter_written_chars(project_dir, chapter_num):
     total_chars = 0
     for item in _collect_scene_metadata(project_dir):
@@ -624,12 +766,206 @@ def count_chapter_written_chars(project_dir, chapter_num):
     return total_chars
 
 
+def count_total_written_chars(project_dir):
+    total_chars = 0
+    for item in _collect_scene_metadata(project_dir):
+        total_chars += len(read_text_file(item["path"]))
+    return total_chars
+
+
+def count_completed_scene_files(project_dir):
+    return len(_collect_scene_metadata(project_dir))
+
+
+def update_scene_ledger_status(project_dir, scene_ref, new_status):
+    outline_path = resolve_outline_path(project_dir, require_exists=False)
+    if not os.path.isfile(outline_path):
+        return ""
+
+    lines = read_text_file(outline_path).splitlines()
+    chapter_pattern = re.compile(rf"^#{{1,6}}\s*第{scene_ref['chapter']}章")
+    any_chapter_pattern = re.compile(r"^#{1,6}\s*第\d+章")
+    chapter_start = -1
+    for index, line in enumerate(lines):
+        if chapter_pattern.match(line.strip()):
+            chapter_start = index
+            break
+    if chapter_start < 0:
+        return ""
+
+    chapter_end = len(lines)
+    for index in range(chapter_start + 1, len(lines)):
+        if any_chapter_pattern.match(lines[index].strip()):
+            chapter_end = index
+            break
+
+    ledger_start = -1
+    for index in range(chapter_start, chapter_end):
+        if lines[index].strip().startswith("### Scene Ledger"):
+            ledger_start = index
+            break
+    if ledger_start < 0:
+        return ""
+
+    header_index = -1
+    header_cells = []
+    for index in range(ledger_start + 1, chapter_end):
+        stripped = lines[index].strip()
+        if not stripped:
+            continue
+        if stripped.startswith("|"):
+            header_cells = _split_markdown_table_row(lines[index])
+            header_index = index
+            break
+        if stripped.startswith("### ") or stripped.startswith("## "):
+            return ""
+    if header_index < 0 or not header_cells:
+        return ""
+    if "scene_id" not in header_cells or "status" not in header_cells:
+        return ""
+
+    scene_id_index = header_cells.index("scene_id")
+    status_index = header_cells.index("status")
+    changed = False
+    for index in range(header_index + 1, chapter_end):
+        stripped = lines[index].strip()
+        if not stripped:
+            break
+        if stripped.startswith("### ") or stripped.startswith("## "):
+            break
+        if not stripped.startswith("|") or stripped.startswith("|---"):
+            continue
+        cells = _split_markdown_table_row(lines[index])
+        if len(cells) != len(header_cells):
+            continue
+        if cells[scene_id_index].strip() != scene_ref["canonical_id"]:
+            continue
+        cells[status_index] = new_status
+        lines[index] = "| " + " | ".join(cells) + " |"
+        changed = True
+        break
+
+    if changed:
+        content = "\n".join(lines) + "\n"
+        write_text_file(outline_path, content)
+        return outline_path
+    return ""
+
+
+def collect_missing_dependencies(project_dir):
+    outline_path = resolve_outline_path(project_dir, require_exists=False)
+    if not os.path.exists(outline_path):
+        return []
+    outline_text = read_text_file(outline_path)
+    chapter_numbers = sorted({int(match.group(1)) for match in re.finditer(r"(?m)^#{1,6}\s*第(\d+)章", outline_text)})
+    missing = []
+    for chapter_num in chapter_numbers:
+        chapter_block = extract_chapter_block(outline_text, chapter_num)
+        for row in parse_scene_ledger(chapter_block):
+            if not row["depends_on"] or row["depends_on"] == "-":
+                continue
+            current_path = find_scene_file(project_dir, parse_scene_reference(row["canonical_id"]))
+            depends_path = find_scene_file(project_dir, parse_scene_reference(row["depends_on"]))
+            if current_path and not depends_path:
+                missing.append(
+                    {
+                        "scene_id": row["canonical_id"],
+                        "depends_on": row["depends_on"],
+                    }
+                )
+    return missing
+
+
+def find_missing_dependency_for_scene(project_dir, scene_ref):
+    for item in collect_missing_dependencies(project_dir):
+        if item["scene_id"] == scene_ref["canonical_id"]:
+            return item
+    return None
+
+
 def _match_scene_tuple(path):
     name = os.path.basename(path)
     match = SCENE_FILENAME_RE.match(name)
     if not match:
         return None
-    return int(match.group(1)), int(match.group(2))
+    return int(match.group(1) or match.group(3)), int(match.group(2) or match.group(4))
+
+
+def infer_scene_ref_from_path(path):
+    matched = _match_scene_tuple(path)
+    if matched is None:
+        return None
+    chapter_num, scene_num = matched
+    return parse_scene_reference(f"{chapter_num}-{scene_num}")
+
+
+def find_scene_file(project_dir, scene_ref):
+    target_key = (scene_ref["chapter"], scene_ref["scene"])
+    for item in _collect_scene_metadata(project_dir):
+        if (item["chapter"], item["scene"]) == target_key:
+            return item["path"]
+    return ""
+
+
+def find_chapter_directory(project_dir, chapter_num):
+    hint = CHAPTER_DIR_HINTS.get(chapter_num, "")
+    if hint:
+        hinted_path = os.path.join(project_dir, hint)
+        if os.path.isdir(hinted_path):
+            return hinted_path
+
+    candidates = []
+    chapter_prefix = f"chapter_{chapter_num}_"
+    for name in os.listdir(project_dir):
+        candidate = os.path.join(project_dir, name)
+        if os.path.isdir(candidate) and name.startswith(chapter_prefix):
+            candidates.append(candidate)
+    if not candidates:
+        return ""
+    return sorted(candidates, key=lambda path: (len(path), path.lower()))[0]
+
+
+def suggest_scene_output_path(project_dir, scene_ref):
+    existing_path = find_scene_file(project_dir, scene_ref)
+    if existing_path:
+        return existing_path
+
+    chapter_items = [
+        item for item in _collect_scene_metadata(project_dir) if item["chapter"] == scene_ref["chapter"]
+    ]
+    preferred_dir = ""
+    if chapter_items:
+        dir_counts = {}
+        for item in chapter_items:
+            directory = os.path.dirname(item["path"])
+            dir_counts[directory] = dir_counts.get(directory, 0) + 1
+        preferred_dir = sorted(
+            dir_counts.items(),
+            key=lambda pair: (-pair[1], len(pair[0]), pair[0].lower()),
+        )[0][0]
+    if not preferred_dir:
+        preferred_dir = find_chapter_directory(project_dir, scene_ref["chapter"]) or project_dir
+
+    style = "chapter_scene"
+    style_candidates = [item for item in chapter_items if os.path.dirname(item["path"]) == preferred_dir] or chapter_items
+    for item in style_candidates:
+        basename = os.path.basename(item["path"])
+        if re.fullmatch(rf"scene_{scene_ref['chapter']}-\d+\.txt", basename, re.IGNORECASE):
+            style = "scene_hyphen"
+            break
+        if re.fullmatch(rf"chapter_?{scene_ref['chapter']}_scene_?\d+\.txt", basename, re.IGNORECASE):
+            style = "chapter_scene"
+            break
+
+    filename = f"scene_{scene_ref['canonical_id']}.txt" if style == "scene_hyphen" else scene_ref["filename"]
+    return os.path.join(preferred_dir, filename)
+
+
+def find_latest_scene_file(project_dir):
+    all_scenes = _collect_scene_metadata(project_dir)
+    if not all_scenes:
+        return None
+    return max(all_scenes, key=lambda item: (os.path.getmtime(item["path"]), item["chapter"], item["scene"]))
 
 
 def find_previous_scene_pack(project_dir, current_scene_ref, explicit_previous_path=""):

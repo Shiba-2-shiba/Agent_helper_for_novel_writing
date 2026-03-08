@@ -3,6 +3,7 @@ import os
 import re
 import shutil
 import sys
+from datetime import datetime, timezone
 
 from prompt_utils import compute_gate_threshold, compute_target_length_profile
 
@@ -31,6 +32,7 @@ def render_outline_template(template_text, *, target_total_chars, planning_gate_
 def build_project_state_schema(project_dir, *, target_total_chars):
     target_length_profile = compute_target_length_profile(target_total_chars)
     planning_gate_min_chars = compute_gate_threshold(target_total_chars)
+    confirmed_at = datetime.now(timezone.utc).isoformat()
     return f"""version: 3
 
 project:
@@ -53,6 +55,10 @@ profile:
 targets:
   target_total_chars: {target_total_chars}
   target_length_profile: "{target_length_profile}"
+  target_confirmed: true
+  target_confirmation_source: "initial"
+  target_confirmed_at: "{confirmed_at}"
+  target_confirmed_by: "user"
   planning_gate_enabled: true
   planning_gate_min_chars: {planning_gate_min_chars}
   planning_target_total_chars: {target_total_chars}
@@ -108,6 +114,9 @@ active_work:
     - "05_chapter_outline.md"
   planning_gate_status: ""
   current_scene_type: ""
+  runtime_mode: ""
+  runtime_scene: ""
+  runtime_generated_at: ""
 
 progress:
   total_chapters: 0
@@ -122,6 +131,8 @@ progress:
   completed_scene_count: 0
   chapter_scene_counts: {{}}
   chapter_planned_chars: {{}}
+  last_checked_scene: ""
+  last_completed_scene: ""
 
 recent_decisions: []
 open_questions: []
@@ -151,7 +162,7 @@ def main():
         "--target-total-chars",
         type=int,
         choices=TARGET_TOTAL_CHAR_CHOICES,
-        default=None,
+        required=True,
         help="Canonical target total chars for the project (30000 / 50000 / 100000)",
     )
     parser.add_argument(
@@ -163,12 +174,10 @@ def main():
 
     templates_dir = os.path.join(BASE_DIR, "templates")
     project_dir = resolve_new_project_dir(args.project_name)
-    target_total_chars = args.target_total_chars or 100000
+    target_total_chars = args.target_total_chars
     planning_gate_min_chars = compute_gate_threshold(target_total_chars)
 
     print(f"Initializing new light novel project: '{args.project_name}'...")
-    if args.target_total_chars is None:
-        print("WARN: --target-total-chars was not provided; falling back to 100000 for compatibility.")
 
     if os.path.exists(project_dir):
         print(f"Error: Directory '{project_dir}' already exists. Aborting.")

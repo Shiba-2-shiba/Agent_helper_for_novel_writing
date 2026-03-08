@@ -71,8 +71,10 @@ description: Plan the next chapter or the next one to three scenes before drafti
 
 - 次に書くシーンと、先に読むべきファイルを明確にする
 - `Write Next` は、指定範囲の中で最も早く着手すべき 1 シーンを選ぶ
+- `Write Next` には `Scene ID` / `Scene Type` / `Length Band` / `Depends On` / `Output Path` を含める
 - 既定の優先順は「最初の未着手シーン」→「最初の情報不足シーン」→「最初の接続確認が必要なシーン」
 - 対象章のシーンがすでに存在する場合は、新規空白シーン前提で扱わず、「どの既存シーンの段取りを再整理するか」を明示する
+- `Depends On` があるシーンは、依存先 `txt` が無いなら後続シーンを `Write Next` にしない
 - `Read First` は、以下の優先順で最大 3 件までに絞る
 - 対象と一致する `runtime/scene_brief_compact.md`
 - stale 判定になった `runtime/scene_brief_compact.md` は `Read First` に含めない
@@ -102,7 +104,7 @@ description: Plan the next chapter or the next one to three scenes before drafti
 
 1. `Planning Scope`: 今回固めた範囲
 2. `Scene Beats`: 目的 / 衝突 / 見せる情報 / 次フック
-3. `Write Next`: 次に書くべきシーンを 1 つ
+3. `Write Next`: `Scene ID` / `Scene Type` / `Length Band` / `Depends On` / `Output Path`
 4. `Read First`: 執筆前に読むファイル
 
 # Do Not

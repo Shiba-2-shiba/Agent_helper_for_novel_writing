@@ -14,7 +14,7 @@ from prompt_utils import (
     require_existing_file,
     read_text_file,
     resolve_project_path,
-    resolve_relative_path,
+    resolve_runtime_dir,
     validate_char_bounds,
     write_text_file,
 )
@@ -84,10 +84,7 @@ def main():
     if not os.path.isdir(project_dir):
         raise UserFacingError(f"project directory not found: {project_dir}")
 
-    if args.runtime_dir:
-        runtime_dir = resolve_relative_path(args.runtime_dir, base_dirs=[project_dir], must_exist=True)
-    else:
-        runtime_dir = os.path.join(project_dir, "runtime")
+    runtime_dir = resolve_runtime_dir(project_dir, mode="draft", runtime_dir_arg=args.runtime_dir)
 
     style_path = require_existing_file(os.path.join(runtime_dir, "style_contract_compact.md"), "runtime/style_contract_compact.md")
     brief_path = require_existing_file(os.path.join(runtime_dir, "scene_brief_compact.md"), "runtime/scene_brief_compact.md")

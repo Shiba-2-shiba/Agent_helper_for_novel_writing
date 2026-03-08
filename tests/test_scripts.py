@@ -21,11 +21,13 @@ if SCRIPTS_DIR not in sys.path:
 
 from eval_skill_trigger_qa import route_prompt
 from prompt_utils import (
+    count_completed_scene_files,
     compute_gate_threshold,
     compute_target_length_profile,
     load_target_length_profile,
     resolve_outline_path,
     resolve_target_profile_from_state,
+    suggest_scene_output_path,
     UserFacingError,
 )
 
@@ -158,6 +160,10 @@ def create_runtime_project(
         encoding="utf-8",
     )
     return str(proj)
+
+
+def scene_runtime_dir(project_dir, scene_id, mode):
+    return os.path.join(project_dir, "runtime", "scenes", scene_id, mode)
 
 
 # ---------------------------------------------------------------------------
@@ -293,23 +299,17 @@ class TestInitProject:
         assert f"- 全体目標文字数: {target_total_chars}" in outline_text
         assert f"- 計画ゲート下限: {planning_gate_min_chars}" in outline_text
 
-    def test_legacy_default_target_total_chars_falls_back_to_100000_with_warning(self, tmp_path, monkeypatch):
-        """target 未指定時は 100000 に fallback し warning を出すこと"""
+    def test_init_project_requires_target_total_chars(self, tmp_path, monkeypatch):
+        """target 未指定では初期化を開始しないこと"""
         monkeypatch.chdir(PROJECT_ROOT)
-        project_name = str(tmp_path / "default_target_novel")
+        project_name = str(tmp_path / "missing_target_novel")
         result = subprocess.run(
             [sys.executable, os.path.join(SCRIPTS_DIR, "init_project.py"), project_name],
             capture_output=True,
             text=True,
         )
-        assert result.returncode == 0, result.stdout + result.stderr
-        assert "WARN" in result.stdout
-        assert "100000" in result.stdout
-
-        state_schema_path = os.path.join(project_name, "agent", "state_schema_novel.yaml")
-        state_schema_text = open(state_schema_path, "r", encoding="utf-8").read()
-        assert "target_total_chars: 100000" in state_schema_text
-        assert 'target_length_profile: "novel_100k"' in state_schema_text
+        assert result.returncode != 0
+        assert "--target-total-chars" in (result.stdout + result.stderr)
 
 
 # ---------------------------------------------------------------------------
@@ -648,6 +648,14 @@ class TestTargetProfileResolvers:
                 )
             )
 
+    def test_count_completed_scene_files_supports_scene_dash_filenames(self, tmp_path):
+        project_dir = tmp_path / "dash_scene_names"
+        chapter_dir = project_dir / "chapter_1_introduction"
+        chapter_dir.mkdir(parents=True)
+        (chapter_dir / "scene_1-1.txt").write_text("本文", encoding="utf-8")
+        (chapter_dir / "scene_1-3.txt").write_text("本文", encoding="utf-8")
+        assert count_completed_scene_files(str(project_dir)) == 2
+
 
 class TestRuntimeRefactorScripts:
     """runtime 系スクリプトの動作検証"""
@@ -675,7 +683,7 @@ class TestRuntimeRefactorScripts:
         )
         assert runtime_result.returncode == 0, runtime_result.stdout + runtime_result.stderr
 
-        runtime_dir = os.path.join(runtime_project, "runtime")
+        runtime_dir = scene_runtime_dir(runtime_project, "2-3", "draft")
         for name in (
             "style_contract_compact.md",
             "scene_brief_compact.md",
@@ -684,6 +692,7 @@ class TestRuntimeRefactorScripts:
             "planning_gate_brief.md",
         ):
             assert os.path.isfile(os.path.join(runtime_dir, name)), f"Missing runtime file: {name}"
+        assert os.path.isfile(os.path.join(runtime_project, "runtime", "runtime_index.json"))
 
         planning_gate_brief = open(os.path.join(runtime_dir, "planning_gate_brief.md"), "r", encoding="utf-8").read()
         assert "Planning Gate: ready" in planning_gate_brief
@@ -832,7 +841,7 @@ class TestRuntimeRefactorScripts:
         )
 
         assert result.returncode == 0, result.stdout + result.stderr
-        assert os.path.isfile(os.path.join(project_dir, "runtime", "scene_brief_compact.md"))
+        assert os.path.isfile(os.path.join(scene_runtime_dir(project_dir, "2-3", "draft"), "scene_brief_compact.md"))
 
     def test_canonical_runtime_context_works_with_new_outline_only(self, tmp_path):
         project_dir = create_runtime_project(
@@ -865,7 +874,7 @@ class TestRuntimeRefactorScripts:
 
         assert result.returncode == 0, result.stdout + result.stderr
         planning_gate_brief = open(
-            os.path.join(project_dir, "runtime", "planning_gate_brief.md"),
+            os.path.join(scene_runtime_dir(project_dir, "2-3", "draft"), "planning_gate_brief.md"),
             "r",
             encoding="utf-8",
         ).read()
@@ -905,12 +914,12 @@ class TestRuntimeRefactorScripts:
 
         assert result.returncode == 0, result.stdout + result.stderr
         planning_gate_brief = open(
-            os.path.join(project_dir, "runtime", "planning_gate_brief.md"),
+            os.path.join(scene_runtime_dir(project_dir, "2-3", "draft"), "planning_gate_brief.md"),
             "r",
             encoding="utf-8",
         ).read()
         request_compact = open(
-            os.path.join(project_dir, "runtime", "request_compact.md"),
+            os.path.join(scene_runtime_dir(project_dir, "2-3", "draft"), "request_compact.md"),
             "r",
             encoding="utf-8",
         ).read()
@@ -950,7 +959,7 @@ class TestRuntimeRefactorScripts:
 
         assert result.returncode == 0, result.stdout + result.stderr
         planning_gate_brief = open(
-            os.path.join(project_dir, "runtime", "planning_gate_brief.md"),
+            os.path.join(scene_runtime_dir(project_dir, "2-3", "draft"), "planning_gate_brief.md"),
             "r",
             encoding="utf-8",
         ).read()
@@ -1094,7 +1103,7 @@ class TestRuntimeRefactorScripts:
         )
         assert result.returncode == 0, result.stdout + result.stderr
 
-        runtime_dir = os.path.join(runtime_project, "runtime")
+        runtime_dir = scene_runtime_dir(runtime_project, "2-3", "resume")
         resume_path = os.path.join(runtime_dir, "resume_brief.md")
         request_path = os.path.join(runtime_dir, "request_compact.md")
         style_path = os.path.join(runtime_dir, "style_contract_compact.md")
@@ -1112,6 +1121,140 @@ class TestRuntimeRefactorScripts:
         assert "runtime/planning_gate_brief.md" in resume_text
         assert "agent/memory/session_notes.md" in resume_text
         assert "chapter_2_scene_2.txt" in resume_text
+        assert "Write Next:" not in resume_text
+
+    def test_build_runtime_context_blocks_draft_when_dependency_scene_is_missing(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        os.remove(os.path.join(project_dir, "chapter_2_scene_2.txt"))
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 1
+        assert "dependent scene not found: 2-2" in result.stdout
+
+    def test_build_runtime_context_resume_marks_requested_scene_as_stale_when_later_scene_exists(self, runtime_project):
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                runtime_project,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-1",
+                "--mode",
+                "resume",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        resume_path = os.path.join(scene_runtime_dir(runtime_project, "2-1", "resume"), "resume_brief.md")
+        resume_text = open(resume_path, "r", encoding="utf-8").read()
+        assert "stale 候補" in resume_text
+
+    def test_build_runtime_context_resume_redirects_to_missing_dependency_scene(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        with open(os.path.join(project_dir, "chapter_2_scene_3.txt"), "w", encoding="utf-8") as handle:
+            handle.write("終盤シーン本文", encoding="utf-8")
+        os.remove(os.path.join(project_dir, "chapter_2_scene_2.txt"))
+        expected_output_path = os.path.join(project_dir, "chapter_2_scene_2.txt")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "resume",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        resume_path = os.path.join(scene_runtime_dir(project_dir, "2-3", "resume"), "resume_brief.md")
+        resume_text = open(resume_path, "r", encoding="utf-8").read()
+        state_text = open(os.path.join(project_dir, "agent", "state_schema_novel.yaml"), "r", encoding="utf-8").read()
+        assert "依存シーン 2-2 が欠落" in resume_text
+        assert "2-2 を先に新規作成する" in resume_text
+        assert f"Output Path: {expected_output_path}" in resume_text
+        assert "Reason: 2-3 depends_on 2-2" in resume_text
+        assert 'recommended_skill: "novel-writer"' in state_text
+        assert f'active_scene: "2-2"' in state_text
+        assert f'next_action: "2-2 を先に新規作成する -> {expected_output_path}"' in state_text
+
+    def test_suggest_scene_output_path_prefers_dash_scene_filenames_inside_chapter_dir(self, tmp_path):
+        project_dir = tmp_path / "dash_output_project"
+        chapter_dir = project_dir / "chapter_1_introduction"
+        chapter_dir.mkdir(parents=True)
+        (chapter_dir / "scene_1-1.txt").write_text("本文", encoding="utf-8")
+        (chapter_dir / "scene_1-3.txt").write_text("本文", encoding="utf-8")
+
+        output_path = suggest_scene_output_path(str(project_dir), {"chapter": 1, "scene": 2, "canonical_id": "1-2", "filename": "chapter_1_scene_2.txt"})
+        assert output_path == os.path.join(str(chapter_dir), "scene_1-2.txt")
+
+    def test_migrate_project_state_populates_target_metadata_and_runtime_index(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        runtime_root = os.path.join(project_dir, "runtime")
+        os.makedirs(runtime_root, exist_ok=True)
+        with open(os.path.join(runtime_root, "scene_brief_compact.md"), "w", encoding="utf-8") as handle:
+            handle.write(
+                "# Scene Brief Compact\n"
+                "Hard Constraints:\n"
+                "- Scene ID: 2-3\n"
+            )
+        with open(os.path.join(runtime_root, "resume_brief.md"), "w", encoding="utf-8") as handle:
+            handle.write("# Resume Brief\nCurrent Position: chapter 2 scene 2 の準備段階。\n")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "migrate_project_state.py"),
+                "--project",
+                project_dir,
+                "--target-source",
+                "late_update",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        state_text = open(os.path.join(project_dir, "agent", "state_schema_novel.yaml"), "r", encoding="utf-8").read()
+        index_payload = json.load(open(os.path.join(runtime_root, "runtime_index.json"), "r", encoding="utf-8"))
+        report = json.load(open(os.path.join(runtime_root, "migration_report.json"), "r", encoding="utf-8"))
+        assert 'target_confirmation_source: "late_update"' in state_text
+        assert "target_confirmed: true" in state_text
+        assert index_payload["latest_by_mode"]["draft"]["scene_id"] == "2-3"
+        assert index_payload["latest_by_mode"]["resume"]["scene_id"] == "2-2"
+        assert report["latest_scene"] == "2-2"
+        assert report["regenerated_resume_runtime"]
+        assert os.path.isfile(report["regenerated_resume_runtime"])
+        assert report["next_write_target"]["scene_id"] == "1-1"
+        assert report["next_write_target"]["output_path"].endswith("chapter_1_scene_1.txt")
 
     def test_route_prompt_prefers_setting_creator_for_blocked_planning_gate(self):
         prompt = "long_form_100k の planning gate が blocked なので scene inventory を増やしたい。"
@@ -1188,6 +1331,46 @@ class TestRuntimeRefactorScripts:
         assert "heading_rule" in report["forbidden_hits"]
         assert report["char_delta_to_min"] == report["actual_chars"] - report["min_chars"]
         assert report["char_delta_to_target"] == report["actual_chars"] - report["target_chars"]
+
+    def test_check_scene_output_syncs_scene_ledger_status(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        text_path = os.path.join(project_dir, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("あ" * 1300)
+
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "check_scene_output.py"),
+                "--project",
+                project_dir,
+                "--text",
+                text_path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        outline_text = open(os.path.join(project_dir, "05_chapter_outline.md"), "r", encoding="utf-8").read()
+        assert "| 2-3 | standard | 障害を越えるために決断する | 逡巡 -> 決断 | 次章への推進力 | 1000 | 1250 | 1500 | 2-2 | completed |" in outline_text
 
     def test_check_scene_output_detects_unclosed_dialogue_and_duplicate_paragraphs(self, tmp_path):
         project_dir = tmp_path / "structural_warnings"

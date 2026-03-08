@@ -8,10 +8,12 @@ from prompt_utils import (
     RUNTIME_PROMPT_WARN_LIMIT,
     UserFacingError,
     estimate_tokens,
+    infer_scene_ref_from_path,
     read_text_file,
     require_existing_file,
     resolve_project_path,
     resolve_relative_path,
+    resolve_runtime_dir,
     write_text_file,
 )
 
@@ -108,12 +110,14 @@ def main():
     if not os.path.isdir(project_dir):
         raise UserFacingError(f"project directory not found: {project_dir}")
 
-    runtime_dir = (
-        resolve_relative_path(args.runtime_dir, base_dirs=[project_dir], must_exist=False)
-        if args.runtime_dir
-        else os.path.join(project_dir, "runtime")
-    )
     draft_path = resolve_relative_path(args.draft_text, base_dirs=[project_dir], must_exist=True)
+    scene_ref = infer_scene_ref_from_path(draft_path)
+    runtime_dir = resolve_runtime_dir(
+        project_dir,
+        mode="draft",
+        scene_ref=scene_ref,
+        runtime_dir_arg=args.runtime_dir,
+    )
     report_path = (
         resolve_relative_path(args.check_report, base_dirs=[project_dir, runtime_dir], must_exist=True)
         if args.check_report
