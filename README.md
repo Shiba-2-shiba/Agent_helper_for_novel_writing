@@ -51,6 +51,7 @@
 この依頼では、エージェントは必要に応じて以下を先に行います。
 - `python scripts/build_runtime_context.py --project <project> --chapter <chapter> --scene <scene> --mode resume`
 - `runtime/resume_brief.md` を優先して現在地を整理する
+- 欠落依存がある場合は、`resume_brief.md` の `Write Next` に出た `Scene ID` / `Output Path` をそのまま次の本文対象にする
 - 次に呼ぶべきスキルを 1 つに絞って案内する
 
 ---
@@ -77,7 +78,7 @@ python scripts/idea_generator.py
 python scripts/init_project.py my_novel --target-total-chars 50000 --from_ideas
 ```
 
-`--target-total-chars` は `30000 / 50000 / 100000` の 3 択です。未指定時は互換性のため `100000` に fallback し、warning を出します。
+`--target-total-chars` は `30000 / 50000 / 100000` の 3 択で必須です。未指定のまま初期化しません。
 
 #### ステップ3: 標準の `runtime` フローで日常執筆を回す
 ```bash
@@ -87,7 +88,7 @@ python scripts/check_scene_output.py --project my_novel --text draft_scene.txt
 python scripts/build_expand_prompt.py --project my_novel --draft_text draft_scene.txt
 python scripts/apply_expand_edits.py --project my_novel --text draft_scene.txt --edits expand_response.txt
 ```
-`runtime/` 配下に圧縮済み文脈とチェック結果がまとまるため、毎回フル文脈を読み込ませずに執筆できます。文字数不足時も、全文再生成ではなく「途中差し込み」または「末尾追記」の局所差分だけを要求するため、再試行のクレジット消費を抑えやすくなります。
+`runtime/` 配下には scene / mode ごとの圧縮済み文脈とチェック結果がまとまるため、毎回フル文脈を読み込ませずに執筆できます。文字数不足時も、全文再生成ではなく「途中差し込み」または「末尾追記」の局所差分だけを要求するため、再試行のクレジット消費を抑えやすくなります。
 `build_draft_prompt.py` と `build_expand_prompt.py` は、生成したプロンプトの概算トークン数も標準出力に出し、`runtime` としては重くなりすぎた場合に警告します。
 差分返答では、`ANCHOR:` に `Existing Paragraph Map` の該当抜粋をそのまま使う前提です。
 
@@ -97,6 +98,13 @@ python scripts/apply_expand_edits.py --project my_novel --text draft_scene.txt -
 python scripts/build_llm_prompt.py --project my_novel --chapter 1
 ```
 生成された `llm_prompt_output.txt` をローカルLLM等に貼り付けることで、設定を把握したAIと手動で壁打ちができます。スクリプト実行時にも legacy 経路である旨を警告表示します。
+
+#### ステップ5: 既存案件を新 state / runtime 運用へ移行する
+```bash
+python scripts/migrate_project_state.py --project my_novel
+```
+目標文字数が後追いで確定した既存案件では、必要に応じて `--target-source late_update` を付けます。
+移行レポート `runtime/migration_report.json` には、欠落依存がある場合の `next_write_target` も出ます。
 
 ---
 
@@ -128,15 +136,12 @@ python scripts/build_llm_prompt.py --project my_novel --chapter 1
 │   ├── ...
 │   ├── chapter_1_introduction/body.md
 │   ├── runtime/
-│   │   ├── style_contract_compact.md
-│   │   ├── scene_brief_compact.md
-│   │   ├── continuity_pack.md
-│   │   ├── request_compact.md
-│   │   ├── draft_prompt.txt
-│   │   ├── check_report.json
-│   │   ├── expand_instruction.md
-│   │   ├── expand_prompt.txt
-│   │   └── resume_brief.md
+│   │   ├── runtime_index.json
+│   │   └── scenes/
+│   │       └── [scene-id]/
+│   │           ├── draft/
+│   │           ├── resume/
+│   │           └── check artifacts
 │   └── agent/                  # プロジェクト単位のエージェント記憶域
 └── README.md
 ```

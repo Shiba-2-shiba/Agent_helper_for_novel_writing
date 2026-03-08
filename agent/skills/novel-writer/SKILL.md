@@ -10,12 +10,12 @@ description: Draft new scene prose for an existing novel project. Use when the u
 # Read First
 
 - `agent/HUB.md`
-- 対象プロジェクトの `runtime/draft_prompt.txt`（あれば最優先）
-- `runtime/draft_prompt.txt` がない場合は `runtime/style_contract_compact.md`
+- 対象シーンの scene-scoped runtime 内 `draft_prompt.txt`（あれば最優先）
+- scene-scoped `draft_prompt.txt` がない場合は、対象シーンの scene-scoped `style_contract_compact.md`
 - 対象プロジェクトの `runtime/planning_gate_brief.md`（あれば gate 状態の確認を優先）
-- `runtime/scene_brief_compact.md`
-- `runtime/continuity_pack.md`
-- `runtime/request_compact.md`
+- 対象シーンの scene-scoped `scene_brief_compact.md`
+- 対象シーンの scene-scoped `continuity_pack.md`
+- 対象シーンの scene-scoped `request_compact.md`
 - `runtime/` に不足がある場合のみ `agent/state_schema_novel.yaml`
 - `runtime/` に不足がある場合のみ `agent/memory/global_notes.md`
 - `runtime/` に不足がある場合のみ対象章の `05_chapter_outline.md` 該当箇所
@@ -35,12 +35,13 @@ description: Draft new scene prose for an existing novel project. Use when the u
 
 # Procedure
 
-## 1. `runtime/` を準備する
+## 1. scene-scoped `runtime/` を準備する
 
-- 対象シーンの `runtime/draft_prompt.txt` があり、対象の `chapter` / `scene` と矛盾しないなら再利用する
+- 対象シーンの scene-scoped `runtime/draft_prompt.txt` があり、対象の `chapter` / `scene` と矛盾しないなら再利用する
 - `runtime/draft_prompt.txt` がない、または `runtime/` の必須ファイルが欠けている場合は、先に以下を実行して更新する
 - `python scripts/build_runtime_context.py --project <project_path> --chapter <chapter> --scene <scene> --mode draft`
 - `python scripts/build_draft_prompt.py --project <project_path>`
+- `Depends On` があるシーンは、依存先 `txt` が無い場合に本文執筆へ進めない
 - `request_compact.md` または `scene_brief_compact.md` に `Planning Gate: blocked` がある場合は、本文執筆へ進まず `setting-creator` へ戻す
 - `runtime/` が使えない場合のみ、従来の広い文脈参照へフォールバックする
 

@@ -29,6 +29,7 @@ description: Initialize a new novel project from an agreed concept or logline. U
 - 企画名、保存先、長さ目標、ジャンルを確認する
 - `Target Total Chars` は `30000 / 50000 / 100000` のいずれかを最初に決める
 - `Target Length Profile` を使う場合は `novel_30k / novel_50k / novel_100k` に揃える
+- `Target Total Chars` 未確定なら、初期化を止めて前段確認へ戻す
 - まだ曖昧な要素と、いま固定してよい要素を分ける
 - 既存案件を上書きしないことを先に確認する
 - 生成先が「新規案件」なのか、「既存案件への agent 運用だけ追加」なのかを分ける
@@ -38,6 +39,7 @@ description: Initialize a new novel project from an agreed concept or logline. U
 
 - このリポジトリ標準の新規案件を作る場合は、まず以下を実行する
 - `python scripts/init_project.py <project_name> --target-total-chars <30000|50000|100000>`
+- `--target-total-chars` を省略して初期化しない
 - 既存案件に対して運用情報だけ整える場合は、初期化スクリプトを実行せず、必要な `agent/` 管理対象だけを整備する
 - まだ未確定の設定は、空欄または保留として残す
 
@@ -73,6 +75,7 @@ description: Initialize a new novel project from an agreed concept or logline. U
 - 初期状態の要約
 - Target Total Chars
 - Target Length Profile
+- target 確定状態
 - 計画ゲート状態
 - 次に呼ぶべきスキル
 - 直後に読むべきファイル一覧

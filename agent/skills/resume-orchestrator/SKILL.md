@@ -55,11 +55,13 @@ description: Recover project state, identify the correct next step, and route ba
 - `runtime/check_report.json` も欠落している場合は、最新シーン `txt` と `state_schema_novel.yaml` の `current_mode` を突き合わせ、実ファイル優先で再開対象を推定する
 - `runtime/resume_brief.md` がない、古い、または対象シーンと不一致なら、先に以下を実行して更新する
 - `python scripts/build_runtime_context.py --project <project_path> --chapter <chapter> --scene <scene> --mode resume`
+- `resume_brief` の文言より、実在する scene `txt` と scene 対応 `check_report` を優先する
 - `runtime/` が使えない場合のみ、従来の広い文脈参照へフォールバックする
 
 ## 3. 現在地を確認する
 
 - まず `runtime/resume_brief.md` を読み、そこに書かれた `Current Position`、`Open Items`、`Next Actions` を優先する
+- `Write Next` がある場合は、`Next Action` と `Recommended Skill` をその `Scene ID` / `Output Path` に揃える
 - `runtime/planning_gate_brief.md` がある場合は、`Planning Gate` と `Next Planning Action` を `resume_brief` の補助判断に使う
 - `Current Position` の文言は、少なくとも以下の粒度で読む
 - `準備段階` / `着手前` / `書き始める前` は、未着手寄りの状態として扱う
@@ -75,6 +77,7 @@ description: Recover project state, identify the correct next step, and route ba
 - `Read First` と `Next Actions` が互いには整合していても、実ファイル状況とズレる場合は、「整合したまま古いスナップショット」として stale の補強根拠にする
 - `resume_brief.md` を stale と判断した場合は、最新のシーン `txt` と `runtime/check_report.json` で現在地を上書きしてから次判断へ進む
 - `scene_brief_compact.md` や `check_report.json` の対象が stale の場合は、どのファイルが古いかを明示し、`runtime` 再生成が必要であることを返答に含める
+- 後続 scene が存在するのに対象 scene が `準備段階` とされている場合は、対象 scene を stale 候補として扱う
 - 更新時刻の補助判定だけでは断定せず、本文実体や検査結果の内容確認も合わせて最終判断する
 - `runtime/resume_brief.md` がない場合のみ、状態ファイルやメモから現在地を再構築する
 - `planning_gate_enabled=true` かつ `planning_gate_status != ready` の場合は、再開対象が本文寄りでも `setting-creator` を優先する
@@ -88,6 +91,7 @@ description: Recover project state, identify the correct next step, and route ba
 
 - まだ案件の箱がない、または `state` / `memory` の基本ファイルが未作成なら、初期化を先にする
 - 対象シーンが未作成、または「次に何を書くか」が未確定なら、執筆前にシーン設計を先にする
+- ただし `resume_brief` に欠落依存起点の `Write Next` がある場合は、`scene-planner` へ戻さずそのシーン作成を先にする
 - 対象シーンはあるが、文字数不足、形式違反、直近修正の取り込み不足が主問題なら、改稿を先にする
 - 対象シーンや章の整合、締め、伏線回収の確認が主問題なら、監査を先にする
 - `runtime/resume_brief.md` が「書き始める条件は揃っている」と示し、次の対象シーンも明確なら、新規執筆に進める
@@ -136,6 +140,8 @@ description: Recover project state, identify the correct next step, and route ba
 3. `Next Action`: 次にやることを 1 つ
 4. `Recommended Skill`: 呼ぶべきスキルを 1 つ
 5. `Read First`: 着手前に見るファイル
+
+`Write Next` がある場合は、`Next Action` にその `Output Path` を含める。
 
 # Do Not
 

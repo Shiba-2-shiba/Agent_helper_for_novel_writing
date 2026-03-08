@@ -25,6 +25,10 @@ profile:
 targets:
   target_total_chars: 100000
   target_length_profile: "novel_100k"
+  target_confirmed: false
+  target_confirmation_source: "" # one of: initial / late_update / migration
+  target_confirmed_at: "" # ISO 8601 timestamp
+  target_confirmed_by: "" # one of: user / migration / system
   planning_gate_enabled: true
   planning_gate_min_chars: 80000
   planning_target_total_chars: 100000
@@ -86,6 +90,9 @@ active_work:
   files_to_check_first: [] # 例: ["05_chapter_outline.md", "chapter_3_scene_1.txt"]
   planning_gate_status: "" # one of: blocked / ready
   current_scene_type: "" # 例: bridge / standard / anchor / climax
+  runtime_mode: "" # 例: draft / resume / check
+  runtime_scene: "" # 例: "3-2"
+  runtime_generated_at: "" # ISO 8601 timestamp
 
 progress:
   total_chapters: 0
@@ -100,6 +107,8 @@ progress:
   completed_scene_count: 0
   chapter_scene_counts: {} # 例: {"1": 5, "2": 6}
   chapter_planned_chars: {} # 例: {"1": 18000, "2": 19000}
+  last_checked_scene: "" # 例: "3-2"
+  last_completed_scene: "" # 例: "3-2"
 
 recent_decisions:
   [] # 直近の重要判断を短く記録する。詳細は `decisions_log.md`

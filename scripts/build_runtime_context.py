@@ -2,6 +2,7 @@ import argparse
 import os
 import re
 import sys
+from datetime import datetime, timezone
 
 from prompt_utils import (
     compute_planned_totals,
@@ -12,13 +13,18 @@ from prompt_utils import (
     UserFacingError,
     build_style_contract,
     count_chapter_written_chars,
+    count_completed_scene_files,
+    count_total_written_chars,
     estimate_tokens,
     ensure_directory,
     extract_chapter_block,
     extract_chapter_summary,
     extract_scene_description,
+    find_missing_dependency_for_scene,
     find_scene_ledger_entry,
     find_previous_scene_pack,
+    find_scene_file,
+    find_latest_scene_file,
     _find_first_existing,
     load_planning_metadata,
     parse_scene_reference,
@@ -31,6 +37,11 @@ from prompt_utils import (
     resolve_scene_type_band,
     resolve_project_path,
     resolve_relative_path,
+    suggest_scene_output_path,
+    runtime_root_dir,
+    runtime_scene_dir,
+    sync_state_schema,
+    update_runtime_index,
     validate_positive_int,
     write_text_file,
 )
@@ -298,12 +309,45 @@ def build_request_compact(mode, priority, scene_ref, planning_meta, length_band)
     return "\n".join(lines)
 
 
-def build_resume_brief(scene_ref, previous_pack, session_notes_text, planning_meta):
+def build_resume_brief(project_dir, scene_ref, previous_pack, session_notes_text, planning_meta):
     full_item = previous_pack["full"]
-    current_position = (
-        f"chapter {scene_ref['chapter']} scene {scene_ref['scene']} の準備段階。"
-        f" 直前参照: {os.path.basename(full_item['path']) if full_item else '未検出'}"
+    target_scene_path = find_scene_file(project_dir, scene_ref)
+    latest_scene = find_latest_scene_file(project_dir)
+    latest_key = (latest_scene["chapter"], latest_scene["scene"]) if latest_scene else (0, 0)
+    requested_key = (scene_ref["chapter"], scene_ref["scene"])
+    blocked_dependency = find_missing_dependency_for_scene(project_dir, scene_ref)
+    latest_scene_ref = (
+        parse_scene_reference(f"{latest_scene['chapter']}-{latest_scene['scene']}")
+        if latest_scene
+        else None
     )
+    latest_dependency = find_missing_dependency_for_scene(project_dir, latest_scene_ref) if latest_scene_ref else None
+
+    if latest_dependency:
+        current_position = (
+            f"最新本文は chapter {latest_scene['chapter']} scene {latest_scene['scene']}。"
+            f" ただし依存シーン {latest_dependency['depends_on']} が欠落している。"
+        )
+    elif blocked_dependency:
+        current_position = (
+            f"chapter {scene_ref['chapter']} scene {scene_ref['scene']} は依存シーン"
+            f" {blocked_dependency['depends_on']} の欠落でブロックされている。"
+        )
+    elif latest_scene and latest_key > requested_key:
+        current_position = (
+            f"最新本文は chapter {latest_scene['chapter']} scene {latest_scene['scene']}。"
+            f" requested {scene_ref['canonical_id']} は stale 候補。"
+        )
+    elif target_scene_path:
+        current_position = (
+            f"chapter {scene_ref['chapter']} scene {scene_ref['scene']} の本文ファイルあり。"
+            f" 直前参照: {os.path.basename(full_item['path']) if full_item else '未検出'}"
+        )
+    else:
+        current_position = (
+            f"chapter {scene_ref['chapter']} scene {scene_ref['scene']} の準備段階。"
+            f" 直前参照: {os.path.basename(full_item['path']) if full_item else '未検出'}"
+        )
     if planning_meta["planning_gate_status"] and planning_meta["planning_gate_status"] != "ready":
         current_position += f" planning gate は {planning_meta['planning_gate_status']}。"
 
@@ -321,21 +365,85 @@ def build_resume_brief(scene_ref, previous_pack, session_notes_text, planning_me
         open_items.append("次シーンの具体的な衝突と着地を確定する")
         open_items.append("直前シーンの余韻をどう継続するか決める")
 
-    next_actions = [
-        "runtime/planning_gate_brief.md を確認する",
-        "runtime/style_contract_compact.md を確認する",
-        "draft に進むか resume 継続かを判断する",
-        f"{scene_ref['canonical_id']} の着手条件を1行で決める",
-    ]
+    write_next = None
+    if latest_dependency:
+        next_scene_ref = parse_scene_reference(latest_dependency["depends_on"])
+        write_next = {
+            "scene_id": next_scene_ref["canonical_id"],
+            "output_path": suggest_scene_output_path(project_dir, next_scene_ref),
+            "reason": f"{latest_dependency['scene_id']} depends_on {latest_dependency['depends_on']}",
+        }
+        open_items.append(
+            f"{latest_dependency['scene_id']} の依存シーン {latest_dependency['depends_on']} が未作成"
+        )
+        next_actions = [
+            f"{latest_dependency['depends_on']} を先に新規作成する -> {write_next['output_path']}",
+            "欠落依存を埋めたうえで最新 scene の runtime を再生成する",
+            "後続 scene を再開対象にしてよいか再確認する",
+        ]
+    elif blocked_dependency:
+        next_scene_ref = parse_scene_reference(blocked_dependency["depends_on"])
+        write_next = {
+            "scene_id": next_scene_ref["canonical_id"],
+            "output_path": suggest_scene_output_path(project_dir, next_scene_ref),
+            "reason": f"{blocked_dependency['scene_id']} depends_on {blocked_dependency['depends_on']}",
+        }
+        open_items.append(
+            f"{blocked_dependency['scene_id']} の依存シーン {blocked_dependency['depends_on']} が未作成"
+        )
+        next_actions = [
+            f"{blocked_dependency['depends_on']} を先に新規作成する -> {write_next['output_path']}",
+            f"{scene_ref['canonical_id']} を再開対象に据えたまま進めない",
+            "依存関係が正しいか Scene Ledger を再確認する",
+        ]
+    elif latest_scene and latest_key > requested_key:
+        open_items.append("runtime が古い対象を指していないか確認する")
+        next_actions = [
+            "実在する最新 scene を基準に runtime を再生成する",
+            "対象シーンの取り違えがないか確認する",
+            "欠落シーンや依存関係の破綻がないか確認する",
+        ]
+    elif target_scene_path:
+        next_actions = [
+            "対象シーン本文と check 結果を確認する",
+            "改稿・監査・次シーン着手のどれが近いか判断する",
+            "runtime と state の対象シーンを揃える",
+        ]
+    else:
+        write_next = {
+            "scene_id": scene_ref["canonical_id"],
+            "output_path": suggest_scene_output_path(project_dir, scene_ref),
+            "reason": "requested scene is not started yet",
+        }
+        next_actions = [
+            "runtime/planning_gate_brief.md を確認する",
+            "runtime/style_contract_compact.md を確認する",
+            "draft に進むか resume 継続かを判断する",
+            f"{scene_ref['canonical_id']} の着手条件を1行で決める -> {write_next['output_path']}",
+        ]
     read_first = [
         "runtime/planning_gate_brief.md",
         "runtime/style_contract_compact.md",
         "runtime/request_compact.md",
     ]
+    if target_scene_path:
+        read_first.append(target_scene_path)
+    elif latest_scene:
+        read_first.append(latest_scene["path"])
+    if latest_dependency:
+        read_first.append("05_chapter_outline.md")
     if full_item:
         read_first.append(full_item["path"])
     if session_notes_text:
         read_first.append("agent/memory/session_notes.md")
+    deduped_read_first = []
+    seen = set()
+    for item in read_first:
+        if item in seen:
+            continue
+        seen.add(item)
+        deduped_read_first.append(item)
+    read_first = deduped_read_first
 
     return "\n".join(
         [
@@ -345,6 +453,16 @@ def build_resume_brief(scene_ref, previous_pack, session_notes_text, planning_me
             *[f"- {item}" for item in open_items],
             "Next Actions:",
             *[f"- {item}" for item in next_actions],
+            *(
+                [
+                    "Write Next:",
+                    f"- Scene ID: {write_next['scene_id']}",
+                    f"- Output Path: {write_next['output_path']}",
+                    f"- Reason: {write_next['reason']}",
+                ]
+                if write_next
+                else []
+            ),
             "Read First:",
             *[f"- {item}" for item in read_first],
         ]
@@ -380,7 +498,9 @@ def main():
     if args.previous_text:
         previous_path = resolve_relative_path(args.previous_text, base_dirs=[project_dir], must_exist=True)
 
-    runtime_dir = os.path.join(project_dir, "runtime")
+    runtime_root = runtime_root_dir(project_dir)
+    ensure_directory(runtime_root)
+    runtime_dir = runtime_scene_dir(project_dir, scene_ref, args.mode)
     ensure_directory(runtime_dir)
 
     outline_path = resolve_outline_path(project_dir)
@@ -397,6 +517,13 @@ def main():
     planning_meta = load_planning_metadata(project_dir)
     if args.mode == "draft":
         scene_plan = find_scene_ledger_entry(chapter_block, scene_ref["scene"], chapter_num=scene_ref["chapter"])
+        if scene_plan and scene_plan["depends_on"] and scene_plan["depends_on"] != "-":
+            dependency_ref = parse_scene_reference(scene_plan["depends_on"])
+            dependency_path = find_scene_file(project_dir, dependency_ref)
+            if not dependency_path:
+                raise UserFacingError(
+                    f"dependent scene not found: {scene_plan['depends_on']} must exist before drafting {scene_ref['canonical_id']}"
+                )
         length_band = _resolve_scene_length_band(scene_plan, planning_meta)
     else:
         length_band = resolve_scene_type_band(
@@ -463,8 +590,67 @@ def main():
             os.path.join(project_dir, "memory", "session_notes.md")
         )
         resume_path = os.path.join(runtime_dir, "resume_brief.md")
-        write_text_file(resume_path, build_resume_brief(scene_ref, previous_pack, session_notes, planning_meta) + "\n")
+        write_text_file(resume_path, build_resume_brief(project_dir, scene_ref, previous_pack, session_notes, planning_meta) + "\n")
         written_files.append(resume_path)
+
+    update_runtime_index(project_dir, mode=args.mode, scene_ref=scene_ref, runtime_dir=runtime_dir)
+    current_mode = "novel" if args.mode == "draft" else "resume_orchestrator"
+    recommended_skill = "novel-writer" if args.mode == "draft" else "resume-orchestrator"
+    active_scene_id = scene_ref["canonical_id"]
+    active_chapter = scene_ref["chapter"]
+    primary_scope = ""
+    next_action = ""
+    if args.mode == "resume":
+        latest_scene = find_latest_scene_file(project_dir)
+        latest_scene_ref = (
+            parse_scene_reference(f"{latest_scene['chapter']}-{latest_scene['scene']}")
+            if latest_scene
+            else None
+        )
+        latest_dependency = find_missing_dependency_for_scene(project_dir, latest_scene_ref) if latest_scene_ref else None
+        blocked_dependency = find_missing_dependency_for_scene(project_dir, scene_ref)
+        if latest_dependency:
+            recommended_skill = "novel-writer"
+            dependency_ref = parse_scene_reference(latest_dependency["depends_on"])
+            active_scene_id = dependency_ref["canonical_id"]
+            active_chapter = dependency_ref["chapter"]
+            primary_scope = f"{latest_dependency['scene_id']} の欠落依存を解消する"
+            next_action = (
+                f"{latest_dependency['depends_on']} を先に新規作成する -> "
+                f"{suggest_scene_output_path(project_dir, dependency_ref)}"
+            )
+        elif blocked_dependency:
+            recommended_skill = "novel-writer"
+            dependency_ref = parse_scene_reference(blocked_dependency["depends_on"])
+            active_scene_id = dependency_ref["canonical_id"]
+            active_chapter = dependency_ref["chapter"]
+            primary_scope = f"{blocked_dependency['scene_id']} の欠落依存を解消する"
+            next_action = (
+                f"{blocked_dependency['depends_on']} を先に新規作成する -> "
+                f"{suggest_scene_output_path(project_dir, dependency_ref)}"
+            )
+    sync_state_schema(
+        project_dir,
+        {
+            "active_work": {
+                "current_mode": current_mode,
+                "recommended_skill": recommended_skill,
+                "primary_scope": primary_scope,
+                "active_chapter": active_chapter,
+                "active_scene": active_scene_id,
+                "next_action": next_action,
+                "runtime_mode": args.mode,
+                "runtime_scene": scene_ref["canonical_id"],
+                "runtime_generated_at": datetime.now(timezone.utc).isoformat(),
+            },
+            "progress": {
+                "current_chapter": scene_ref["chapter"],
+                "current_scene": scene_ref["canonical_id"],
+                "completed_scene_count": count_completed_scene_files(project_dir),
+                "total_chars_written": count_total_written_chars(project_dir),
+            },
+        },
+    )
 
     for warning in warnings:
         print(f"WARN: {warning}")

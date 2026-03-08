@@ -4,14 +4,20 @@ import re
 import sys
 
 from prompt_utils import (
+    count_completed_scene_files,
+    count_total_written_chars,
     DEFAULT_MAX_CHARS,
     DEFAULT_MIN_CHARS,
     DEFAULT_TARGET_CHARS,
     UserFacingError,
+    infer_scene_ref_from_path,
     extract_forbidden_terms,
     read_text_file,
     resolve_project_path,
     resolve_relative_path,
+    resolve_runtime_dir,
+    sync_state_schema,
+    update_scene_ledger_status,
     validate_char_bounds,
     write_json_file,
 )
@@ -239,10 +245,12 @@ def main():
         raise UserFacingError(f"project directory not found: {project_dir}")
 
     text_path = resolve_relative_path(args.text, base_dirs=[project_dir], must_exist=True)
-    runtime_dir = (
-        resolve_relative_path(args.runtime_dir, base_dirs=[project_dir], must_exist=False)
-        if args.runtime_dir
-        else os.path.join(project_dir, "runtime")
+    scene_ref = infer_scene_ref_from_path(text_path)
+    runtime_dir = resolve_runtime_dir(
+        project_dir,
+        mode="draft",
+        scene_ref=scene_ref,
+        runtime_dir_arg=args.runtime_dir,
     )
     scene_band = parse_scene_brief_band(runtime_dir)
     effective_min = scene_band["min"] if scene_band else args.min_chars
@@ -284,6 +292,35 @@ def main():
 
     output_path = os.path.join(runtime_dir, "check_report.json")
     write_json_file(output_path, report)
+    if scene_ref is not None:
+        outline_status = (
+            "completed"
+            if (
+                not report["needs_expand"]
+                and not report["format_violations"]
+                and not report["forbidden_hits"]
+                and report["within_max"]
+            )
+            else "drafted"
+        )
+        update_scene_ledger_status(project_dir, scene_ref, outline_status)
+        sync_state_schema(
+            project_dir,
+            {
+                "active_work": {
+                    "active_chapter": scene_ref["chapter"],
+                    "active_scene": scene_ref["canonical_id"],
+                },
+                "progress": {
+                    "current_chapter": scene_ref["chapter"],
+                    "current_scene": scene_ref["canonical_id"],
+                    "last_checked_scene": scene_ref["canonical_id"],
+                    "last_completed_scene": scene_ref["canonical_id"],
+                    "completed_scene_count": count_completed_scene_files(project_dir),
+                    "total_chars_written": count_total_written_chars(project_dir),
+                },
+            },
+        )
     print("OK: scene output checked")
     print(f"OK: needs_expand={str(report['needs_expand']).lower()} actual_chars={actual_chars}")
 

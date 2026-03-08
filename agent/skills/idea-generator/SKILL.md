@@ -15,11 +15,13 @@ description: Brainstorm new novel concepts, widen rough ideas, and shape them in
 # Required Inputs
 
 - ユーザーの初期アイディア、キーワード、ジャンル希望
+- 必須: `Target Total Chars` (`30000 / 50000 / 100000`)
 
 # Procedure
 
 ## 1. 発想を広げる
 
+- 最初に `Target Total Chars` を確認し、未確定なら先に確定する
 - 一度に大量質問を投げず、1〜2論点ずつ対話する
 - ユーザーの断片情報に対して、必ず複数の具体案を返す
 - ロジックの厳密性より、面白さ、差別化、伸びしろを優先する
@@ -33,6 +35,7 @@ description: Brainstorm new novel concepts, widen rough ideas, and shape them in
 - 事件の入口
 
 上記が見えたら、1〜2文のログラインを作り、ユーザー合意を取る。
+`Target Total Chars` 未確定のままログライン確定へ進めない。
 
 ## 3. 次フェーズへ渡す
 
@@ -55,5 +58,4 @@ description: Brainstorm new novel concepts, widen rough ideas, and shape them in
 - 6項目をまとめて質問しない
 - ユーザーの突飛な案を即否定しない
 - この段階で設定テンプレートの詳細記入まで進めない
-
 
