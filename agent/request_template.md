@@ -15,6 +15,8 @@
 - `planning_gate_enabled=true` の profile では固定 `1000-1500` ではなく、`scene_type` ごとの `Length Band` を使う
 - 低クレジット運用では、`bridge` を短く保ち、`anchor` / `climax` だけを厚くする
 - 必須項目だけで依頼してよい。細部は `Context` と `Notes` で補う
+- `01_concept_sheet.md` から `04_plot_outline.md` は core と optional を分けて使う。未採用の optional 項目は空欄でよい
+- `setting_creation` を頼むときは、今回の重点レンズと前面に出しすぎない要素を書くとズレが減る
 - `Mode` を書く場合は、`HUB.md` の正式モード名をそのまま使う
 - 正式モード名: `idea_generation` / `project_bootstrap` / `setting_creation` / `scene_planning` / `novel` / `revision` / `consistency_audit` / `polish` / `resume_orchestrator`
 
@@ -77,6 +79,8 @@
 
 ## Required Context
 - 変えたい前提
+- 重点レンズ、または強めたい要素
+- 今回は前面に出しすぎない要素
 
 ## Current Issue
 - いま起きている矛盾や不満
@@ -84,6 +88,7 @@
 ## Constraints
 - 維持したい世界観
 - 維持したい着地点
+- 必須で埋めたいファイル（例: `01` と `05` だけ / `01` から `04` まで）
 - `Planning Gate` を通したいか
 - 重要シーンだけ厚くしたいか
 ```
@@ -130,6 +135,7 @@
 
 ## Required Context
 - 参照すべき章プロット
+- `05_chapter_outline.md` の対象行
 - 直前シーン
 
 ## Context
@@ -274,9 +280,9 @@ idea_generation / project_bootstrap / setting_creation / scene_planning / novel 
 短く頼む場合でも、以下のどれかに寄せると誤解が減ります。
 
 ```md
-idea_generation: 学園ラブコメの企画を壁打ちしたい。会話強めで考えたい。
+idea_generation: 学園ものの企画を壁打ちしたい。会話強めで考えたい。
 project_bootstrap: このログラインで案件を立ち上げたい。保存先は novels 配下。Target Total Chars は 50000。
-setting_creation: 主人公の動機と世界の制約を固めたい。ご都合主義は避けたい。
+setting_creation: 主人公の動機と世界の制約を固めたい。重点レンズは関係性と謎。ご都合主義は避けたい。
 scene_planning: 第3章の次の 2 シーンだけ段取りを決めたい。
 novel: 第3章シーン2の初稿を書いて。直前は 3-1。
 consistency_audit: 第4章の違和感を見て。感情線とテンポ重視。

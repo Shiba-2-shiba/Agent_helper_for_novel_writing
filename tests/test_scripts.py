@@ -179,7 +179,13 @@ class TestInitProject:
         # tmp_path 内にプロジェクト名を作る
         project_name = str(tmp_path / "test_novel")
         result = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS_DIR, "init_project.py"), project_name],
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "init_project.py"),
+                project_name,
+                "--target-total-chars",
+                "50000",
+            ],
             capture_output=True, text=True
         )
         assert result.returncode == 0, f"Expected exit 0, got: {result.stderr}"
@@ -210,7 +216,13 @@ class TestInitProject:
         os.makedirs(project_name)
 
         result = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS_DIR, "init_project.py"), project_name],
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "init_project.py"),
+                project_name,
+                "--target-total-chars",
+                "50000",
+            ],
             capture_output=True, text=True
         )
         assert result.returncode == 1, f"Expected exit 1 for existing dir, got: {result.returncode}"
@@ -230,7 +242,7 @@ class TestInitProject:
             project_name = str(tmp_path / "from_ideas_novel")
             result = subprocess.run(
                 [sys.executable, os.path.join(SCRIPTS_DIR, "init_project.py"),
-                 project_name, "--from_ideas"],
+                 project_name, "--target-total-chars", "50000", "--from_ideas"],
                 capture_output=True, text=True
             )
             assert result.returncode == 0, result.stderr
@@ -1121,7 +1133,9 @@ class TestRuntimeRefactorScripts:
         assert "runtime/planning_gate_brief.md" in resume_text
         assert "agent/memory/session_notes.md" in resume_text
         assert "chapter_2_scene_2.txt" in resume_text
-        assert "Write Next:" not in resume_text
+        assert "Write Next:" in resume_text
+        assert "Scene ID: 2-3" in resume_text
+        assert "Reason: requested scene is not started yet" in resume_text
 
     def test_build_runtime_context_blocks_draft_when_dependency_scene_is_missing(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
@@ -1148,6 +1162,11 @@ class TestRuntimeRefactorScripts:
         assert "dependent scene not found: 2-2" in result.stdout
 
     def test_build_runtime_context_resume_marks_requested_scene_as_stale_when_later_scene_exists(self, runtime_project):
+        with open(os.path.join(runtime_project, "chapter_1_scene_1.txt"), "w", encoding="utf-8") as handle:
+            handle.write("導入シーン本文")
+        with open(os.path.join(runtime_project, "chapter_2_scene_3.txt"), "w", encoding="utf-8") as handle:
+            handle.write("後続シーン本文")
+
         result = subprocess.run(
             [
                 sys.executable,
@@ -1173,7 +1192,7 @@ class TestRuntimeRefactorScripts:
     def test_build_runtime_context_resume_redirects_to_missing_dependency_scene(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
         with open(os.path.join(project_dir, "chapter_2_scene_3.txt"), "w", encoding="utf-8") as handle:
-            handle.write("終盤シーン本文", encoding="utf-8")
+            handle.write("終盤シーン本文")
         os.remove(os.path.join(project_dir, "chapter_2_scene_2.txt"))
         expected_output_path = os.path.join(project_dir, "chapter_2_scene_2.txt")
 
@@ -1204,7 +1223,8 @@ class TestRuntimeRefactorScripts:
         assert "Reason: 2-3 depends_on 2-2" in resume_text
         assert 'recommended_skill: "novel-writer"' in state_text
         assert f'active_scene: "2-2"' in state_text
-        assert f'next_action: "2-2 を先に新規作成する -> {expected_output_path}"' in state_text
+        assert 'next_action: "2-2 を先に新規作成する -> ' in state_text
+        assert expected_output_path.replace("\\", "\\\\") in state_text
 
     def test_suggest_scene_output_path_prefers_dash_scene_filenames_inside_chapter_dir(self, tmp_path):
         project_dir = tmp_path / "dash_output_project"

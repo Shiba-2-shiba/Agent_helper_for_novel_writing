@@ -45,6 +45,12 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 - 世界観ルールに代償や制限があるか
 - 解決策がご都合主義になっていないか
 - 伏線が配置されているか
+- `01` から `04` は core 項目を先に埋め、optional 項目は採用した重点レンズに必要な場合のみ使う
+- 未採用の optional 項目を無理に埋めて、プロンプトに不要な方向づけを増やさない
+- `01_concept_sheet.md` では「今回の重点レンズ」と「前面に出しすぎない要素」を先に確定する
+- `02_character_sheet.md` ではジャンル役割よりも、目的・圧力・対立要因・関係変化の起点を優先する
+- `03_world_building.md` では設定量ではなく、制約・代償・物語が自然発生する環境要因を優先する
+- `04_plot_outline.md` では各幕の進展・悪化・反転・回収を優先し、補助メモは必要なレンズだけ使う
 
 ## 3. 長編計画ゲートを作る
 
@@ -56,6 +62,8 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 - 章末フック
 - 回収する伏線
 - 新規に撒く伏線
+- この章で強める要素
+- この章で抑える要素
 - 想定シーン数
 - 想定最小字数
 - 想定目標字数
@@ -72,6 +80,8 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 - `planned_total_target_chars` を算出する
 - `planned_total_min_chars` が `planning_gate_min_chars` 未満なら `planning_gate_status` を `blocked` とする
 - `planned_total_min_chars` が `planning_gate_min_chars` 以上なら `planning_gate_status` を `ready` とする
+- `Scene Ledger` の列名・列順・章見出し・`Planning Totals` は変更しない
+- ledger 外側の補助欄と `Notes` の判断ログで、scene_type だけでは表現できない方針を補う
 
 ## 4. 次の工程へ渡せる状態に整える
 
@@ -109,4 +119,3 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 - `planning_gate_enabled=true` なのに `05_chapter_outline.md` を optional 扱いしない
 - legacy fallback を除き、`05_chapter_outline_100k.md` を canonical path のように扱わない
 - 計画ゲート未通過のまま、直近シーンの段取りや本文執筆へ進めない
-
