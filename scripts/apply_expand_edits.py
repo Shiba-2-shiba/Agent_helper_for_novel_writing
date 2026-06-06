@@ -3,8 +3,10 @@ import os
 import re
 import sys
 
+from novel_agent.ledgers import record_quality_budget_action
 from prompt_utils import (
     UserFacingError,
+    infer_scene_ref_from_path,
     read_text_file,
     resolve_project_path,
     resolve_relative_path,
@@ -156,6 +158,14 @@ def main():
     updated_text = apply_edits(source_text, edits)
 
     write_text_file(output_path, updated_text)
+    scene_ref = infer_scene_ref_from_path(text_path)
+    record_quality_budget_action(
+        project_dir,
+        scene_ref,
+        "expand_edits_applied",
+        f"applied {len(edits)} edit blocks",
+        artifacts=[output_path],
+    )
     print(f"OK: applied {len(edits)} edit blocks")
     print(f"OK: output={output_path}")
 

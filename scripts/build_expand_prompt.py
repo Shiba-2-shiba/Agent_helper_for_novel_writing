@@ -4,6 +4,11 @@ import os
 import re
 import sys
 
+from novel_agent.ledgers import (
+    evaluate_quality_budget_for_expand,
+    record_quality_budget_action,
+)
+from novel_agent.trace import append_trace_event
 from prompt_utils import (
     RUNTIME_PROMPT_WARN_LIMIT,
     UserFacingError,
@@ -104,6 +109,7 @@ def main():
     parser.add_argument("--draft_text", required=True, help="Draft text file path")
     parser.add_argument("--runtime_dir", default="", help="Optional runtime directory path")
     parser.add_argument("--check_report", default="", help="Optional check report path")
+    parser.add_argument("--force", action="store_true", help="Override quality budget blocking and record the override")
     args = parser.parse_args()
 
     project_dir = resolve_project_path(args.project)
@@ -135,6 +141,10 @@ def main():
     for key in ("actual_chars", "min_chars", "needs_expand"):
         if key not in report:
             raise UserFacingError("check_report.json is missing required keys")
+
+    budget_decision = evaluate_quality_budget_for_expand(project_dir, scene_ref, report)
+    if not budget_decision["allowed"] and not args.force:
+        raise UserFacingError(budget_decision["reason"])
 
     instruction_text, missing_chars = build_expand_instruction(report)
     paragraph_map = build_paragraph_map(draft_text)
@@ -187,7 +197,31 @@ def main():
     prompt_path = os.path.join(runtime_dir, "expand_prompt.txt")
     write_text_file(instruction_path, instruction_text + "\n")
     write_text_file(prompt_path, prompt + "\n")
+    record_quality_budget_action(
+        project_dir,
+        scene_ref,
+        "expand_prompt_generated",
+        (
+            f"forced override: {budget_decision['reason']}"
+            if args.force and not budget_decision["allowed"]
+            else budget_decision["reason"]
+        ),
+        artifacts=[instruction_path, prompt_path],
+        force=args.force and not budget_decision["allowed"],
+        issue_key=budget_decision.get("issue_key", ""),
+    )
+    append_trace_event(
+        project_dir,
+        event_type="patch_prompt_generated",
+        chapter=scene_ref["chapter"] if scene_ref else None,
+        scene=scene_ref["canonical_id"] if scene_ref else "",
+        summary=f"expand prompt generated missing_chars={missing_chars}",
+        artifacts=[instruction_path, prompt_path],
+        tokens_estimate=estimated_tokens,
+    )
 
+    if args.force and not budget_decision["allowed"]:
+        print(f"WARN: quality budget override used: {budget_decision['reason']}")
     if not bool(report.get("needs_expand")):
         print("WARN: needs_expand=false but expand prompt requested")
     print("OK: expand prompt generated")

@@ -22,6 +22,7 @@ description: Recover project state, identify the correct next step, and route ba
 - `runtime/` に不足がある場合のみ、対象プロジェクトの `memory/global_notes.md`
 - `runtime/` に不足がある場合のみ、対象プロジェクトの `memory/session_notes.md`
 - 必要なら `agent/memory/session_archive.md`
+- 必要なら `agent/trace/trace_min.txt` または `agent/trace/trace_view.txt`
 - 必要なら最新のシーン `txt` や進捗ファイル
 
 # Required Inputs
@@ -80,6 +81,7 @@ description: Recover project state, identify the correct next step, and route ba
 - 後続 scene が存在するのに対象 scene が `準備段階` とされている場合は、対象 scene を stale 候補として扱う
 - 更新時刻の補助判定だけでは断定せず、本文実体や検査結果の内容確認も合わせて最終判断する
 - `runtime/resume_brief.md` がない場合のみ、状態ファイルやメモから現在地を再構築する
+- 判断履歴が必要な場合は、先に `agent/trace/trace_min.txt` を確認し、必要な event だけ `trace_full.txt` または `trace_view.txt` で復元する
 - `planning_gate_enabled=true` かつ `planning_gate_status != ready` の場合は、再開対象が本文寄りでも `setting-creator` を優先する
 
 - 完了済みの章、シーン

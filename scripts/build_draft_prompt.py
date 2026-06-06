@@ -3,6 +3,8 @@ import os
 import re
 import sys
 
+from novel_agent.ledgers import append_token_ledger, find_artifact_by_path
+from novel_agent.trace import append_trace_event
 from prompt_utils import (
     DEFAULT_MAX_CHARS,
     DEFAULT_MIN_CHARS,
@@ -96,6 +98,10 @@ def main():
     continuity_pack = read_text_file(continuity_path).strip()
     request_compact = read_text_file(request_path).strip()
     planning_gate_brief = read_optional_text(os.path.join(runtime_dir, "planning_gate_brief.md")).strip()
+    for required_path in (style_path, brief_path, continuity_path, request_path):
+        artifact = find_artifact_by_path(project_dir, required_path)
+        if artifact and artifact.get("status") == "stale":
+            print(f"WARN: stale runtime artifact detected: {artifact.get('path')}")
     scene_brief_meta = parse_scene_brief_metadata(scene_brief)
     request_meta = parse_request_compact_metadata(request_compact)
     planning_gate_meta = parse_planning_gate_brief_metadata(planning_gate_brief)
@@ -157,6 +163,27 @@ def main():
 
     output_path = os.path.join(runtime_dir, "draft_prompt.txt")
     write_text_file(output_path, prompt + "\n")
+    append_token_ledger(
+        project_dir,
+        {
+            "command": "build_draft_prompt",
+            "projection": "draft",
+            "chapter": None,
+            "scene": None,
+            "runtime_dir": runtime_dir,
+            "total_estimated_tokens": estimated_tokens,
+            "sections": part_estimates,
+            "budget": RUNTIME_PROMPT_WARN_LIMIT,
+            "status": "over_budget" if estimated_tokens > RUNTIME_PROMPT_WARN_LIMIT else "within_budget",
+        },
+    )
+    append_trace_event(
+        project_dir,
+        event_type="draft_prompt_generated",
+        summary="draft prompt generated from compact runtime files",
+        artifacts=[output_path],
+        tokens_estimate=estimated_tokens,
+    )
     print(f"OK: draft prompt generated at {output_path}")
     print(f"OK: estimated_tokens={estimated_tokens} runtime_budget={RUNTIME_PROMPT_WARN_LIMIT}")
     if estimated_tokens > RUNTIME_PROMPT_WARN_LIMIT:

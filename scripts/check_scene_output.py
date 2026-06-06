@@ -3,6 +3,19 @@ import os
 import re
 import sys
 
+from novel_agent.text_quality import (
+    META_PATTERNS,
+    classify_quality,
+    collect_format_violations,
+    detect_format_violations,
+    dialogue_ratio_hint,
+    paragraph_count,
+)
+from novel_agent.anti_ai_style import analyze_anti_ai_style
+from novel_agent.story_state import update_story_state_from_check
+from novel_agent.ledgers import update_quality_budget_from_check
+from novel_agent.obligations import check_obligations, load_obligation_contract
+from novel_agent.trace import append_trace_event
 from prompt_utils import (
     count_completed_scene_files,
     count_total_written_chars,
@@ -21,12 +34,6 @@ from prompt_utils import (
     validate_char_bounds,
     write_json_file,
 )
-
-
-META_PATTERNS = [
-    ("meta_preface_detected", re.compile(r"(?m)^\s*(?:以下に|以下、|それでは|承知しました|了解しました)")),
-    ("meta_output_notice_detected", re.compile(r"(?:生成しました|出力します|出力しました|修正版|補足|注:)")),
-]
 
 
 def parse_scene_brief_band(runtime_dir):
@@ -48,118 +55,6 @@ def parse_scene_brief_band(runtime_dir):
     }
 
 
-def detect_unclosed_dialogue(text):
-    open_count = text.count("「")
-    close_count = text.count("」")
-    if open_count == close_count:
-        return None
-
-    for line in text.splitlines():
-        if line.count("「") != line.count("」"):
-            return {
-                "type": "unclosed_dialogue_detected",
-                "match": line.strip()[:80],
-                "open_count": open_count,
-                "close_count": close_count,
-            }
-
-    return {
-        "type": "unclosed_dialogue_detected",
-        "match": "dialogue quote count mismatch",
-        "open_count": open_count,
-        "close_count": close_count,
-    }
-
-
-def detect_duplicate_paragraphs(text):
-    paragraphs = [block.strip() for block in re.split(r"\n\s*\n", text.strip()) if block.strip()]
-    seen = {}
-    duplicates = []
-
-    for index, paragraph in enumerate(paragraphs, start=1):
-        normalized = re.sub(r"\s+", " ", paragraph)
-        if len(normalized) < 20:
-            continue
-        if normalized in seen:
-            duplicates.append(
-                {
-                    "type": "duplicate_paragraph_detected",
-                    "match": normalized[:80],
-                    "first_paragraph": seen[normalized],
-                    "duplicate_paragraph": index,
-                }
-            )
-            continue
-        seen[normalized] = index
-
-    return duplicates
-
-
-def collect_format_violations(text):
-    violations = []
-    details = []
-
-    heading_match = re.search(r"(?m)^\s*#+\s+(.+)$", text)
-    if heading_match:
-        violations.append("heading_detected")
-        details.append(
-            {
-                "type": "heading_detected",
-                "match": heading_match.group(0).strip(),
-            }
-        )
-
-    bullet_match = re.search(r"(?m)^\s*(?:[-*]\s+|\d+\.\s+)(.+)$", text)
-    if bullet_match:
-        violations.append("bullet_list_detected")
-        details.append(
-            {
-                "type": "bullet_list_detected",
-                "match": bullet_match.group(0).strip(),
-            }
-        )
-
-    for violation_type, pattern in META_PATTERNS:
-        match = pattern.search(text)
-        if not match:
-            continue
-        if "meta_commentary_detected" not in violations:
-            violations.append("meta_commentary_detected")
-        details.append(
-            {
-                "type": violation_type,
-                "match": match.group(0).strip(),
-            }
-        )
-
-    unclosed_dialogue = detect_unclosed_dialogue(text)
-    if unclosed_dialogue:
-        violations.append("unclosed_dialogue_detected")
-        details.append(unclosed_dialogue)
-
-    duplicate_paragraphs = detect_duplicate_paragraphs(text)
-    if duplicate_paragraphs:
-        violations.append("duplicate_paragraph_detected")
-        details.extend(duplicate_paragraphs)
-
-    return violations, details
-
-
-def detect_format_violations(text):
-    violations, _ = collect_format_violations(text)
-    return violations
-
-
-def paragraph_count(text):
-    blocks = [block for block in re.split(r"\n\s*\n", text.strip()) if block.strip()]
-    return len(blocks)
-
-
-def dialogue_ratio_hint(text):
-    if not text:
-        return 0.0
-    dialogue_chars = sum(len(match.group(0)) for match in re.finditer(r"「[^」]*」", text, re.DOTALL))
-    return round(dialogue_chars / len(text), 3)
 
 
 def load_forbidden_terms(runtime_dir):
@@ -263,6 +158,39 @@ def main():
     actual_chars = len(body_text)
     violations, violation_details = collect_format_violations(body_text)
     forbidden_hits, forbidden_hit_details = collect_forbidden_hits(body_text, runtime_dir)
+    paragraph_count_value = paragraph_count(body_text)
+    dialogue_ratio = dialogue_ratio_hint(body_text)
+    quality_assessment = classify_quality(
+        actual_chars=actual_chars,
+        min_chars=effective_min,
+        max_chars=effective_max,
+        format_details=violation_details,
+        forbidden_hits=forbidden_hits,
+        paragraph_count_value=paragraph_count_value,
+        dialogue_ratio=dialogue_ratio,
+    )
+    obligation_path = os.path.join(runtime_dir, "obligation_contract.json")
+    obligation_contract = load_obligation_contract(obligation_path)
+    obligation_assessment = check_obligations(project_dir, obligation_contract, scene_type=scene_type)
+    if obligation_assessment["blocking_issues"]:
+        quality_assessment["blocking_issues"].extend(obligation_assessment["blocking_issues"])
+        quality_assessment["status"] = "fail"
+    elif obligation_assessment["warnings"]:
+        quality_assessment["warnings"].extend(obligation_assessment["warnings"])
+        if quality_assessment["status"] == "pass":
+            quality_assessment["status"] = "warning"
+    anti_ai_assessment = analyze_anti_ai_style(body_text)
+    if anti_ai_assessment["warnings"]:
+        quality_assessment["warnings"].extend(
+            {
+                "type": f"anti_ai_style:{warning['type']}",
+                "message": warning["message"],
+                "evidence": warning.get("evidence", ""),
+            }
+            for warning in anti_ai_assessment["warnings"]
+        )
+        if quality_assessment["status"] == "pass":
+            quality_assessment["status"] = "warning"
 
     report = {
         "target_file": text_path,
@@ -286,12 +214,35 @@ def main():
         "format_violations_detail": violation_details,
         "forbidden_hits": forbidden_hits,
         "forbidden_hits_detail": forbidden_hit_details,
-        "paragraph_count": paragraph_count(body_text),
-        "dialogue_ratio_hint": dialogue_ratio_hint(body_text),
+        "paragraph_count": paragraph_count_value,
+        "dialogue_ratio_hint": dialogue_ratio,
+        "obligation_status": obligation_assessment["status"],
+        "obligation_issues": obligation_assessment["blocking_issues"] + obligation_assessment["warnings"],
+        "anti_ai_style": anti_ai_assessment,
+        **quality_assessment,
     }
 
     output_path = os.path.join(runtime_dir, "check_report.json")
     write_json_file(output_path, report)
+    update_quality_budget_from_check(project_dir, scene_ref, report, report_path=output_path)
+    update_story_state_from_check(project_dir, scene_ref, report)
+    append_trace_event(
+        project_dir,
+        event_type="scene_checked",
+        chapter=scene_ref["chapter"] if scene_ref else None,
+        scene=scene_ref["canonical_id"] if scene_ref else "",
+        summary=f"scene check status={report['status']} needs_expand={str(report['needs_expand']).lower()}",
+        artifacts=[output_path],
+        evidence=[f"blocking={len(report['blocking_issues'])}", f"warnings={len(report['warnings'])}"],
+    )
+    append_trace_event(
+        project_dir,
+        event_type="state_updated",
+        chapter=scene_ref["chapter"] if scene_ref else None,
+        scene=scene_ref["canonical_id"] if scene_ref else "",
+        summary="story_state updated from scene check",
+        artifacts=[os.path.join(project_dir, "runtime", "story_state.json")],
+    )
     if scene_ref is not None:
         outline_status = (
             "completed"

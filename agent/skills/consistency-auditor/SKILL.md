@@ -13,6 +13,8 @@ description: Diagnose plot, setting, pacing, continuity, and style issues withou
 - `agent/state_schema_novel.yaml`
 - `agent/memory/global_notes.md`
 - 対象シーン、章、または設定ファイル
+- 必要なら `runtime/health_report.json`
+- 必要なら対象 scene の `runtime/check_report.json` / `runtime/obligation_contract.json`
 
 # Required Inputs
 
@@ -38,6 +40,8 @@ description: Diagnose plot, setting, pacing, continuity, and style issues withou
 - 感情線の停滞
 - テンポの悪さ
 - 次話フックの弱さ
+- obligation 未達
+- anti-AI style warning
 
 ## 3. 影響度で並べる
 
@@ -50,6 +54,7 @@ description: Diagnose plot, setting, pacing, continuity, and style issues withou
 - 設定修正が必要なら `agent/skills/setting-creator/SKILL.md`
 - 本文改稿で足りるなら `agent/skills/revision-editor/SKILL.md`
 - 文体調整だけなら `agent/skills/prose-polisher/SKILL.md`
+- export 前診断では `approval_ledger.json` と `health_report.json` の stale / fail / warning も確認する
 
 # Handoff
 

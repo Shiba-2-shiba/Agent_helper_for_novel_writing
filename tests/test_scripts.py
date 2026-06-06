@@ -676,6 +676,41 @@ class TestRuntimeRefactorScripts:
     def runtime_project(self, tmp_path):
         return create_runtime_project(tmp_path)
 
+    def build_runtime_context_for_scene(self, project_dir):
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def check_scene_text(self, project_dir, text_path):
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "check_scene_output.py"),
+                "--project",
+                project_dir,
+                "--text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result
+
     def test_runtime_flow_generates_compact_files_and_expand_prompt(self, runtime_project):
         runtime_result = subprocess.run(
             [
@@ -831,6 +866,166 @@ class TestRuntimeRefactorScripts:
         assert "彼は返事の意味を測りかねて" in updated_text
         assert "それでも足を止める理由にはならない" in updated_text
         assert updated_text.index("彼は返事の意味を測りかねて") < updated_text.index("主人公は息を整えた。")
+
+    def test_check_scene_output_updates_quality_budget_for_under_min_and_pass(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("短い本文。")
+
+        self.check_scene_text(runtime_project, text_path)
+
+        ledger_path = os.path.join(runtime_project, "runtime", "quality_budget_ledger.json")
+        payload = json.load(open(ledger_path, "r", encoding="utf-8"))
+        scene_record = payload["scenes"]["2-3"]
+        assert scene_record["counters"]["check_runs"] == 1
+        assert scene_record["issues"]["under_min_for_type"]["status"] == "open"
+        assert scene_record["issues"]["under_min_for_type"]["attempts"] == 0
+
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("あ" * 1300)
+        self.check_scene_text(runtime_project, text_path)
+
+        payload = json.load(open(ledger_path, "r", encoding="utf-8"))
+        scene_record = payload["scenes"]["2-3"]
+        assert scene_record["counters"]["check_runs"] == 2
+        assert scene_record["issues"]["under_min_for_type"]["status"] == "resolved"
+
+    def test_build_expand_prompt_blocks_repeated_expand_without_recheck(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("短い本文。")
+        self.check_scene_text(runtime_project, text_path)
+
+        first_result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert first_result.returncode == 0, first_result.stdout + first_result.stderr
+
+        second_result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert second_result.returncode == 1
+        assert "quality budget requires check_scene_output.py before another expansion" in second_result.stdout
+
+    def test_build_expand_prompt_force_records_quality_budget_override(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("短い本文。")
+        self.check_scene_text(runtime_project, text_path)
+
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        forced_result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+                "--force",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert forced_result.returncode == 0, forced_result.stdout + forced_result.stderr
+        assert "quality budget override used" in forced_result.stdout
+
+        payload = json.load(open(os.path.join(runtime_project, "runtime", "quality_budget_ledger.json"), "r", encoding="utf-8"))
+        scene_record = payload["scenes"]["2-3"]
+        assert scene_record["counters"]["forced_overrides"] == 1
+        assert scene_record["counters"]["expand_prompts"] == 2
+        assert any(decision.get("force") for decision in scene_record["decisions"])
+
+    def test_build_expand_prompt_blocks_format_violations(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("# 見出し\n本文。")
+        self.check_scene_text(runtime_project, text_path)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "expansion is not appropriate for issue type: format_violation" in result.stdout
+
+    def test_apply_expand_edits_records_quality_budget_action(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("最初の段落。\n\n二番目の段落。")
+        edits_path = os.path.join(runtime_project, "expand_response.txt")
+        with open(edits_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "[EDIT 1]\n"
+                "TARGET: after P1\n"
+                "ANCHOR: 最初の段落。\n"
+                "TEXT:\n"
+                "追加文。\n"
+            )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "apply_expand_edits.py"),
+                "--project",
+                runtime_project,
+                "--text",
+                text_path,
+                "--edits",
+                edits_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+        payload = json.load(open(os.path.join(runtime_project, "runtime", "quality_budget_ledger.json"), "r", encoding="utf-8"))
+        scene_record = payload["scenes"]["2-3"]
+        assert scene_record["counters"]["expand_edits_applied"] == 1
+        assert scene_record["decisions"][-1]["action"] == "expand_edits_applied"
 
     def test_legacy_runtime_context_works_with_old_outline_only(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline_100k.md")
@@ -1424,6 +1619,407 @@ class TestRuntimeRefactorScripts:
         assert "unclosed_dialogue_detected" in detail_types
         assert "duplicate_paragraph_detected" in detail_types
 
+    def test_check_scene_output_writes_pass_status(self, tmp_path):
+        project_dir = tmp_path / "quality_pass"
+        runtime_dir = project_dir / "runtime"
+        runtime_dir.mkdir(parents=True)
+        text_path = project_dir / "scene.txt"
+        text_path.write_text("あ" * 1200, encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "check_scene_output.py"),
+                "--project",
+                str(project_dir),
+                "--text",
+                str(text_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.load(open(runtime_dir / "check_report.json", "r", encoding="utf-8"))
+        assert report["status"] == "pass"
+        assert report["blocking_issues"] == []
+        assert "quality_score_hint" in report
+
+    def test_check_scene_output_writes_warning_status_for_duplicate_only(self, tmp_path):
+        project_dir = tmp_path / "quality_warning"
+        runtime_dir = project_dir / "runtime"
+        runtime_dir.mkdir(parents=True)
+        text_path = project_dir / "scene.txt"
+        paragraph = "主人公は石畳の上で足を止め、胸のざわめきが消えないことを自覚した。" * 10
+        text_path.write_text(f"{paragraph}\n\n{paragraph}", encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "check_scene_output.py"),
+                "--project",
+                str(project_dir),
+                "--text",
+                str(text_path),
+                "--min_chars",
+                "100",
+                "--target_chars",
+                "500",
+                "--max_chars",
+                "2000",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.load(open(runtime_dir / "check_report.json", "r", encoding="utf-8"))
+        assert report["status"] == "warning"
+        assert report["blocking_issues"] == []
+        assert any(item["type"] == "duplicate_paragraph_detected" for item in report["warnings"])
+
+    def test_check_scene_output_writes_fail_status_for_blocking_issue(self, tmp_path):
+        project_dir = tmp_path / "quality_fail"
+        runtime_dir = project_dir / "runtime"
+        runtime_dir.mkdir(parents=True)
+        text_path = project_dir / "scene.txt"
+        text_path.write_text("# 見出し\n本文", encoding="utf-8")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "check_scene_output.py"),
+                "--project",
+                str(project_dir),
+                "--text",
+                str(text_path),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.load(open(runtime_dir / "check_report.json", "r", encoding="utf-8"))
+        assert report["status"] == "fail"
+        issue_types = [item["type"] for item in report["blocking_issues"]]
+        assert "heading_detected" in issue_types
+
+    def test_compile_project_context_writes_full_min_and_index(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "compile_project_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        context_dir = os.path.join(project_dir, "runtime", "context")
+        full_path = os.path.join(context_dir, "context_full.txt")
+        min_path = os.path.join(context_dir, "context_min.txt")
+        index_path = os.path.join(context_dir, "context_index.json")
+        assert os.path.isfile(full_path)
+        assert os.path.isfile(min_path)
+        assert os.path.isfile(index_path)
+
+        full_text = open(full_path, "r", encoding="utf-8").read()
+        min_text = open(min_path, "r", encoding="utf-8").read()
+        index_payload = json.load(open(index_path, "r", encoding="utf-8"))
+        assert ">>> outline:scene:2-3" in full_text
+        assert "05_chapter_outline.md" in min_text
+        assert index_payload["scene"] == "2-3"
+        assert any(block["role"] == "outline_scene" for block in index_payload["blocks"])
+
+    def test_compile_project_context_grep_writes_view_with_pointer(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "compile_project_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+                "--grep",
+                "障害",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        view_path = os.path.join(project_dir, "runtime", "context", "context_view.txt")
+        assert os.path.isfile(view_path)
+        view_text = open(view_path, "r", encoding="utf-8").read()
+        assert "05_chapter_outline.md:" in view_text
+        assert "[outline" in view_text
+        assert "障害" in view_text
+
+    def test_runtime_context_registers_artifact_ledger(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        ledger_path = os.path.join(project_dir, "runtime", "artifact_ledger.json")
+        assert os.path.isfile(ledger_path)
+        payload = json.load(open(ledger_path, "r", encoding="utf-8"))
+        artifact_types = {item["type"] for item in payload["artifacts"]}
+        assert "scene_brief" in artifact_types
+        assert "continuity_pack" in artifact_types
+        assert all(item["status"] == "active" for item in payload["artifacts"])
+
+    def test_build_draft_prompt_warns_on_stale_runtime_artifact(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        outline_path = os.path.join(project_dir, "05_chapter_outline.md")
+        with open(outline_path, "a", encoding="utf-8") as handle:
+            handle.write("\n<!-- changed after runtime generation -->\n")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_draft_prompt.py"),
+                "--project",
+                project_dir,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "WARN: stale runtime artifact detected" in result.stdout
+
+    def test_build_draft_prompt_appends_token_ledger(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_draft_prompt.py"),
+                "--project",
+                project_dir,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        ledger_path = os.path.join(project_dir, "runtime", "token_ledger.jsonl")
+        assert os.path.isfile(ledger_path)
+        records = [json.loads(line) for line in open(ledger_path, "r", encoding="utf-8") if line.strip()]
+        assert records[-1]["command"] == "build_draft_prompt"
+        assert records[-1]["status"] in {"within_budget", "over_budget"}
+
+    def test_check_scene_output_updates_story_state(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        text_path = os.path.join(project_dir, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("あ" * 1300)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "check_scene_output.py"),
+                "--project",
+                project_dir,
+                "--text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        state_path = os.path.join(project_dir, "runtime", "story_state.json")
+        assert os.path.isfile(state_path)
+        payload = json.load(open(state_path, "r", encoding="utf-8"))
+        assert payload["active_scene"] == "2-3"
+        assert payload["scenes"]["2-3"]["check_status"] == "pass"
+        assert payload["scenes"]["2-3"]["actual_chars"] == 1300
+        assert payload["progress"]["completed_scene_count"] >= 3
+
+    def test_build_scene_index_writes_scene_summaries(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_scene_index.py"),
+                "--project",
+                project_dir,
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        index_path = os.path.join(project_dir, "runtime", "scene_summaries.jsonl")
+        assert os.path.isfile(index_path)
+        records = [json.loads(line) for line in open(index_path, "r", encoding="utf-8") if line.strip()]
+        assert {record["scene_id"] for record in records} >= {"2-1", "2-2"}
+        assert all("content_hash" in record for record in records)
+
+    def test_build_runtime_context_writes_pointer_first_related_context_pack(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        long_scene_path = os.path.join(project_dir, "chapter_2_scene_2.txt")
+        long_text = "障害の橋で主人公は判断を迫られた。" * 120
+        with open(long_scene_path, "w", encoding="utf-8") as handle:
+            handle.write(long_text)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        related_path = scene_runtime_dir(project_dir, "2-3", "draft")
+        related_file = os.path.join(related_path, "related_context_pack.md")
+        assert os.path.isfile(related_file)
+        related_text = open(related_file, "r", encoding="utf-8").read()
+        assert "## Pointers" in related_text
+        assert "chapter_2_scene_2.txt:1-1" in related_text
+        assert long_text not in related_text
+
+    def test_compile_agent_trace_writes_min_and_view(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "compile_agent_trace.py"),
+                "--project",
+                project_dir,
+                "--grep",
+                "runtime_generated",
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        trace_dir = os.path.join(project_dir, "agent", "trace")
+        full_path = os.path.join(trace_dir, "trace_full.txt")
+        min_path = os.path.join(trace_dir, "trace_min.txt")
+        view_path = os.path.join(trace_dir, "trace_view.txt")
+        assert os.path.isfile(full_path)
+        assert os.path.isfile(min_path)
+        assert os.path.isfile(view_path)
+        assert "runtime_generated" in open(min_path, "r", encoding="utf-8").read()
+        assert "trace.jsonl:" in open(view_path, "r", encoding="utf-8").read()
+
+    def test_compile_agent_trace_warns_when_trace_is_missing(self, tmp_path):
+        project_dir = tmp_path / "no_trace_project"
+        project_dir.mkdir()
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "compile_agent_trace.py"),
+                "--project",
+                str(project_dir),
+            ],
+            capture_output=True,
+            text=True,
+        )
+
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "WARN: no trace events found" in result.stdout
+        assert os.path.isfile(project_dir / "agent" / "trace" / "trace_min.txt")
+
     def test_build_expand_prompt_fails_on_invalid_json(self, tmp_path):
         project_dir = tmp_path / "broken_report"
         runtime_dir = project_dir / "runtime"
@@ -1479,6 +2075,208 @@ class TestRuntimeRefactorScripts:
         )
         assert result.returncode == 1
         assert "ERROR: ANCHOR does not match paragraph P1" in result.stdout
+
+
+class TestScenePipelineRefactor:
+    def _write_runtime_check(self, project_dir, scene_id, status):
+        runtime_dir = scene_runtime_dir(project_dir, scene_id, "draft")
+        os.makedirs(runtime_dir, exist_ok=True)
+        chapter, scene = scene_id.split("-", 1)
+        report = {
+            "status": status,
+            "target_file": os.path.join(project_dir, f"chapter_{chapter}_scene_{scene}.txt"),
+            "needs_expand": False,
+            "blocking_issues": [] if status != "fail" else [{"type": "forced_fail"}],
+            "warnings": [{"type": "forced_warning"}] if status == "warning" else [],
+        }
+        write_utf8(os.path.join(runtime_dir, "check_report.json"), json.dumps(report, ensure_ascii=False))
+        return runtime_dir
+
+    def test_approve_scene_rejects_fail_and_warning_without_flag(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        self._write_runtime_check(project_dir, "2-2", "fail")
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-2"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "cannot approve" in result.stdout
+
+        self._write_runtime_check(project_dir, "2-2", "warning")
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-2"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "--allow-warnings" in result.stdout
+
+    def test_approve_and_export_approved_scene_only(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        self._write_runtime_check(project_dir, "2-1", "pass")
+
+        approve = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-1"],
+            capture_output=True,
+            text=True,
+        )
+        assert approve.returncode == 0, approve.stdout + approve.stderr
+
+        export = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "export_manuscript.py"), "--project", project_dir],
+            capture_output=True,
+            text=True,
+        )
+        assert export.returncode == 0, export.stdout + export.stderr
+        manuscript = open(os.path.join(project_dir, "exports", "manuscript.md"), "r", encoding="utf-8").read()
+        assert "奇妙な依頼書" in manuscript
+        assert "橋は崩れ" not in manuscript
+        assert "body.md" not in manuscript
+
+    def test_export_rejects_stale_approval(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        self._write_runtime_check(project_dir, "2-1", "pass")
+        subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-1"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        with open(os.path.join(project_dir, "chapter_2_scene_1.txt"), "a", encoding="utf-8") as handle:
+            handle.write("改稿で本文が変わった。")
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "export_manuscript.py"), "--project", project_dir],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "stale approval detected" in result.stdout
+
+    def test_run_scene_pipeline_prepare_and_prompt(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        prepare = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "run_scene_pipeline.py"),
+                "prepare",
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert prepare.returncode == 0, prepare.stdout + prepare.stderr
+        assert "NEXT: run prompt" in prepare.stdout
+
+        prompt = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "run_scene_pipeline.py"), "prompt", "--project", project_dir],
+            capture_output=True,
+            text=True,
+        )
+        assert prompt.returncode == 0, prompt.stdout + prompt.stderr
+        assert "NEXT: write scene text" in prompt.stdout
+
+    def test_runtime_context_writes_obligation_contract(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        runtime_dir = scene_runtime_dir(project_dir, "2-3", "draft")
+        contract = json.load(open(os.path.join(runtime_dir, "obligation_contract.json"), "r", encoding="utf-8"))
+        assert contract["required_dependencies"] == ["2-2"]
+        brief = open(os.path.join(runtime_dir, "scene_brief_compact.md"), "r", encoding="utf-8").read()
+        assert "## Obligation Contract" in brief
+
+    def test_check_scene_output_blocks_missing_obligation_dependency(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        scene_path = os.path.join(project_dir, "chapter_2_scene_3.txt")
+        write_utf8(scene_path, "主人公は決断した。" * 80)
+        runtime_dir = scene_runtime_dir(project_dir, "2-3", "draft")
+        os.makedirs(runtime_dir, exist_ok=True)
+        write_utf8(os.path.join(runtime_dir, "style_contract_compact.md"), "# Style\n")
+        write_utf8(os.path.join(runtime_dir, "scene_brief_compact.md"), "Scene Type: standard\nLength Band: 100 / 150 / 2000\n")
+        write_utf8(
+            os.path.join(runtime_dir, "obligation_contract.json"),
+            json.dumps({"version": 1, "scene_id": "2-3", "required_dependencies": ["2-9"]}, ensure_ascii=False),
+        )
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "check_scene_output.py"), "--project", project_dir, "--text", scene_path],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.load(open(os.path.join(runtime_dir, "check_report.json"), "r", encoding="utf-8"))
+        assert report["status"] == "fail"
+        assert report["obligation_status"] == "fail"
+        assert any(item["type"] == "missing_required_dependency" for item in report["blocking_issues"])
+
+    def test_check_scene_output_adds_anti_ai_warning_without_fail(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        scene_path = os.path.join(project_dir, "chapter_2_scene_3.txt")
+        text = (
+            "つまり彼は理由を説明した。なぜならそれは必要だった。"
+            "要するに状況は変わらなかった。言い換えれば、迷いは残った。"
+            "それは彼にとって重い選択だった。"
+        ) * 8
+        write_utf8(scene_path, text)
+        runtime_dir = scene_runtime_dir(project_dir, "2-3", "draft")
+        os.makedirs(runtime_dir, exist_ok=True)
+        write_utf8(os.path.join(runtime_dir, "style_contract_compact.md"), "# Style\n")
+        write_utf8(os.path.join(runtime_dir, "scene_brief_compact.md"), "Scene Type: standard\nLength Band: 100 / 150 / 3000\n")
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "check_scene_output.py"), "--project", project_dir, "--text", scene_path],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.load(open(os.path.join(runtime_dir, "check_report.json"), "r", encoding="utf-8"))
+        assert report["status"] == "warning"
+        assert report["anti_ai_style"]["status"] == "warning"
+        assert any(item["type"].startswith("anti_ai_style:") for item in report["warnings"])
+        assert report["blocking_issues"] == []
+
+    def test_project_health_reports_warning_and_fix_safe(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "sync_project_health.py"), "--project", project_dir],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "health status=warning" in result.stdout
+
+        fixed = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "sync_project_health.py"), "--project", project_dir, "--fix-safe", "--json"],
+            capture_output=True,
+            text=True,
+        )
+        assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+        assert os.path.isfile(os.path.join(project_dir, "runtime", "health_report.json"))
+        assert os.path.isfile(os.path.join(project_dir, "runtime", "scene_summaries.jsonl"))
+        assert os.path.isfile(os.path.join(project_dir, "runtime", "story_state.json"))
 
 
 # ---------------------------------------------------------------------------
