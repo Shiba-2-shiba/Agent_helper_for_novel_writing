@@ -69,7 +69,7 @@ Baseline before implementation:
 
 ## Not Started
 
-- Full quality budget ledger is not yet implemented; the numbered 1-7 phases did not require it directly, but the architecture notes still identify it as useful follow-up.
+- Full quality budget ledger follow-up has been implemented. See `history/quality_budget_ledger_progress_2026-06-06.md`.
 
 ## Known Risks
 
@@ -80,7 +80,7 @@ Baseline before implementation:
 - Related context selection must avoid prompt bloat; pointer-first output is required.
 - `story_state.json` must not become another free-form summary sink.
 - Trace logging must not leak full generated prose into every event.
-- Quality budget loop limiting remains a follow-up if repeated repair attempts become a real cost sink.
+- Quality budget loop limiting now blocks repeated or inappropriate expansion before another prompt is generated; optional reporting remains a future convenience.
 
 ## Next Recommended Action
 
@@ -89,7 +89,7 @@ Use the new runtime helpers on a real project and inspect token/context reductio
 1. Run `build_runtime_context.py` and `build_draft_prompt.py` on an active scene.
 2. Run `compile_project_context.py --grep <keyword>` to verify pointer recovery.
 3. Check `runtime/token_ledger.jsonl` and `runtime/artifact_ledger.json`.
-4. If repeated repair loops appear, implement the deferred quality budget ledger.
+4. If repeated repair loops appear, inspect `runtime/quality_budget_ledger.json` and route exhausted cases to revision/manual review or use explicit `--force`.
 
 ## Stop Conditions
 
@@ -105,3 +105,4 @@ Pause implementation if:
 
 - 2026-06-06: Created this planning set.
 - 2026-06-06: Implemented phases 1-7. Validation: `74 passed in 5.73s`.
+- 2026-06-06: Implemented quality budget ledger follow-up. Validation: `79 passed in 6.88s`.

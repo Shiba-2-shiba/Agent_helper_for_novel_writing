@@ -676,6 +676,41 @@ class TestRuntimeRefactorScripts:
     def runtime_project(self, tmp_path):
         return create_runtime_project(tmp_path)
 
+    def build_runtime_context_for_scene(self, project_dir):
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+    def check_scene_text(self, project_dir, text_path):
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "check_scene_output.py"),
+                "--project",
+                project_dir,
+                "--text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        return result
+
     def test_runtime_flow_generates_compact_files_and_expand_prompt(self, runtime_project):
         runtime_result = subprocess.run(
             [
@@ -831,6 +866,166 @@ class TestRuntimeRefactorScripts:
         assert "彼は返事の意味を測りかねて" in updated_text
         assert "それでも足を止める理由にはならない" in updated_text
         assert updated_text.index("彼は返事の意味を測りかねて") < updated_text.index("主人公は息を整えた。")
+
+    def test_check_scene_output_updates_quality_budget_for_under_min_and_pass(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("短い本文。")
+
+        self.check_scene_text(runtime_project, text_path)
+
+        ledger_path = os.path.join(runtime_project, "runtime", "quality_budget_ledger.json")
+        payload = json.load(open(ledger_path, "r", encoding="utf-8"))
+        scene_record = payload["scenes"]["2-3"]
+        assert scene_record["counters"]["check_runs"] == 1
+        assert scene_record["issues"]["under_min_for_type"]["status"] == "open"
+        assert scene_record["issues"]["under_min_for_type"]["attempts"] == 0
+
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("あ" * 1300)
+        self.check_scene_text(runtime_project, text_path)
+
+        payload = json.load(open(ledger_path, "r", encoding="utf-8"))
+        scene_record = payload["scenes"]["2-3"]
+        assert scene_record["counters"]["check_runs"] == 2
+        assert scene_record["issues"]["under_min_for_type"]["status"] == "resolved"
+
+    def test_build_expand_prompt_blocks_repeated_expand_without_recheck(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("短い本文。")
+        self.check_scene_text(runtime_project, text_path)
+
+        first_result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert first_result.returncode == 0, first_result.stdout + first_result.stderr
+
+        second_result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert second_result.returncode == 1
+        assert "quality budget requires check_scene_output.py before another expansion" in second_result.stdout
+
+    def test_build_expand_prompt_force_records_quality_budget_override(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("短い本文。")
+        self.check_scene_text(runtime_project, text_path)
+
+        subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        forced_result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+                "--force",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert forced_result.returncode == 0, forced_result.stdout + forced_result.stderr
+        assert "quality budget override used" in forced_result.stdout
+
+        payload = json.load(open(os.path.join(runtime_project, "runtime", "quality_budget_ledger.json"), "r", encoding="utf-8"))
+        scene_record = payload["scenes"]["2-3"]
+        assert scene_record["counters"]["forced_overrides"] == 1
+        assert scene_record["counters"]["expand_prompts"] == 2
+        assert any(decision.get("force") for decision in scene_record["decisions"])
+
+    def test_build_expand_prompt_blocks_format_violations(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("# 見出し\n本文。")
+        self.check_scene_text(runtime_project, text_path)
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_expand_prompt.py"),
+                "--project",
+                runtime_project,
+                "--draft_text",
+                text_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "expansion is not appropriate for issue type: format_violation" in result.stdout
+
+    def test_apply_expand_edits_records_quality_budget_action(self, runtime_project):
+        self.build_runtime_context_for_scene(runtime_project)
+        text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
+        with open(text_path, "w", encoding="utf-8") as handle:
+            handle.write("最初の段落。\n\n二番目の段落。")
+        edits_path = os.path.join(runtime_project, "expand_response.txt")
+        with open(edits_path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "[EDIT 1]\n"
+                "TARGET: after P1\n"
+                "ANCHOR: 最初の段落。\n"
+                "TEXT:\n"
+                "追加文。\n"
+            )
+
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "apply_expand_edits.py"),
+                "--project",
+                runtime_project,
+                "--text",
+                text_path,
+                "--edits",
+                edits_path,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+
+        payload = json.load(open(os.path.join(runtime_project, "runtime", "quality_budget_ledger.json"), "r", encoding="utf-8"))
+        scene_record = payload["scenes"]["2-3"]
+        assert scene_record["counters"]["expand_edits_applied"] == 1
+        assert scene_record["decisions"][-1]["action"] == "expand_edits_applied"
 
     def test_legacy_runtime_context_works_with_old_outline_only(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline_100k.md")

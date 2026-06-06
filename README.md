@@ -99,6 +99,7 @@ python scripts/apply_expand_edits.py --project my_novel --text draft_scene.txt -
 `runtime/` 配下には scene / mode ごとの圧縮済み文脈とチェック結果がまとまるため、毎回フル文脈を読み込ませずに執筆できます。文字数不足時も、全文再生成ではなく「途中差し込み」または「末尾追記」の局所差分だけを要求するため、再試行のクレジット消費を抑えやすくなります。
 `build_draft_prompt.py` と `build_expand_prompt.py` は、生成したプロンプトの概算トークン数も標準出力に出し、`runtime` としては重くなりすぎた場合に警告します。
 差分返答では、`ANCHOR:` に `Existing Paragraph Map` の該当抜粋をそのまま使う前提です。
+`runtime/quality_budget_ledger.json` は、同じシーンで同じ失敗に対する修復 prompt を繰り返し作りすぎないための台帳です。`build_expand_prompt.py` は文字数不足の局所増補だけを通常許可し、見出し混入・禁止表現・上限超過などは expansion ではなく改稿や手動確認へ戻します。どうしても続行する場合のみ `--force` を付けると、override として ledger に記録されます。
 
 #### Context Compiler / Ledger 補助
 
@@ -113,6 +114,7 @@ python scripts/compile_agent_trace.py --project my_novel --grep "scene_checked|r
 - `runtime/context/` には full / min / grep view と `context_index.json` が出ます
 - `runtime/artifact_ledger.json` は古い runtime 生成物の検出に使います
 - `runtime/token_ledger.jsonl` は prompt / projection の概算トークンを記録します
+- `runtime/quality_budget_ledger.json` は修復 prompt の回数、同一 issue の試行回数、`--force` override を記録します
 - `runtime/story_state.json` は scene check 結果と進捗を小さな事実台帳として保持します
 - `runtime/scene_summaries.jsonl` と `related_context_pack.md` は、全文再投入ではなく短い要約と正本 pointer を渡します
 - `agent/trace/` は runtime 生成や check の判断履歴を復元するための project-local trace です

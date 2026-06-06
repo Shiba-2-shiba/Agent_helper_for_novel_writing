@@ -13,6 +13,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 - `agent/state_schema_novel.yaml`
 - `agent/memory/global_notes.md`
 - 対象シーンの `txt`
+- 対象 scene の `runtime/check_report.json` と `runtime/quality_budget_ledger.json`（あれば）
 - 必要なら直前、直後シーン
 - 章の方向性変更が絡む場合のみ `body.md`
 
@@ -29,6 +30,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 - 現行テキストの弱点を整理する
 - 残すべき要素と変える要素を分ける
 - 変更が局所修正で足りるか、構成再設計が必要か判断する
+- `quality_budget_ledger.json` で同一 issue の修復予算が尽きている場合は、なぜ expansion では直らないかを先に特定する
 
 ## 2. 改稿方針を決める
 

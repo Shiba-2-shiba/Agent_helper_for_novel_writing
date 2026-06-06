@@ -23,7 +23,7 @@ Date: 2026-06-06
 
 Deferred:
 
-- [ ] Full quality budget ledger for repair-loop limiting remains a follow-up. The numbered 1-7 phase set was completed without it.
+- [x] Full quality budget ledger for repair-loop limiting implemented as a follow-up. See `history/quality_budget_ledger_progress_2026-06-06.md`.
 - [ ] Related context currently uses lexical scoring directly; using `compile_project_context.py --grep` as an alternate selector remains a follow-up.
 
 ## Phase 0: Behavior Lock
@@ -184,7 +184,7 @@ Deferred:
 - [ ] pointer から正本 source に戻れる
 - [ ] stale runtime が検出できる
 - [ ] token ledger で実行ごとの推定 token を追える
-- [ ] quality budget ledger で同一問題の修復ループを制限できる（deferred）
+- [x] quality budget ledger で同一問題の修復ループを制限できる
 - [ ] story_state が scene/check 状態を保持する
 - [ ] related_context_pack が pointer-first で生成される
 - [ ] agent trace の min/view が生成できる

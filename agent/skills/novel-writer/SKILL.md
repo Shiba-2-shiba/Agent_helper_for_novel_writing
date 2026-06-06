@@ -89,7 +89,8 @@ description: Draft new scene prose for an existing novel project. Use when the u
 
 `runtime/scene_brief_compact.md` に `Length Band` がない場合のみ、旧基準の `length_contract` または `1000-1500` をフォールバックとして使う。
 
-基準を満たさない場合は、最大 3 回まで自律的に修正する。
+基準を満たさない場合は、`runtime/quality_budget_ledger.json` の範囲内で最大 3 回まで自律的に修正する。
+同一 issue の予算超過、recheck なしの連続 expansion、または format / forbidden / over max のように expansion が不適切な失敗では、追加 prompt を作らず改稿・監査・手動確認へ戻す。明示的に続行する場合のみ `build_expand_prompt.py --force` を使い、override を ledger に残す。
 
 ## 5. 保存する
 
@@ -116,6 +117,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - 改稿や監査の責務を抱え込まない
 - `planning_gate_enabled=true` かつ `planning_gate_status != ready` のまま初稿を書き始めない
 - 文字数不足のまま完成扱いにしない
+- `quality_budget_ledger.json` が止めている修復ループを無視して続けない
 - `runtime/scene_brief_compact.md` の `Length Band` があるのに、旧固定値だけで自己判定しない
 - 毎回フル文脈を読み直してクレジットを無駄に消費しない
 - `needs_expand=true` なのに全面再生成へ戻らない

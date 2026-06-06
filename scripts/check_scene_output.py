@@ -12,6 +12,7 @@ from novel_agent.text_quality import (
     paragraph_count,
 )
 from novel_agent.story_state import update_story_state_from_check
+from novel_agent.ledgers import update_quality_budget_from_check
 from novel_agent.trace import append_trace_event
 from prompt_utils import (
     count_completed_scene_files,
@@ -196,6 +197,7 @@ def main():
 
     output_path = os.path.join(runtime_dir, "check_report.json")
     write_json_file(output_path, report)
+    update_quality_budget_from_check(project_dir, scene_ref, report, report_path=output_path)
     update_story_state_from_check(project_dir, scene_ref, report)
     append_trace_event(
         project_dir,
