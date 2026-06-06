@@ -5,6 +5,7 @@ import sys
 from datetime import datetime, timezone
 
 from novel_agent.ledgers import append_token_ledger, register_artifacts
+from novel_agent.obligations import build_obligation_contract, format_obligation_contract, write_obligation_contract
 from novel_agent.scene_index import refresh_scene_summaries, render_related_context_pack
 from novel_agent.trace import append_trace_event
 from prompt_utils import (
@@ -202,7 +203,7 @@ def _count_planned_scenes_remaining(chapter_rows, scene_ref):
     return remaining
 
 
-def build_scene_brief(chapter_block, scene_ref, project_dir, planning_meta):
+def build_scene_brief(chapter_block, scene_ref, project_dir, planning_meta, obligation_contract=None):
     scene_plan = find_scene_ledger_entry(chapter_block, scene_ref["scene"], chapter_num=scene_ref["chapter"])
     chapter_rows = parse_scene_ledger(chapter_block)
     scene_desc = extract_scene_description(chapter_block, scene_ref["scene"])
@@ -261,6 +262,11 @@ def build_scene_brief(chapter_block, scene_ref, project_dir, planning_meta):
             f"- Planning Gate: {planning_meta['planning_gate_status'] or 'unknown'}",
             "- 直前シーンとの接続を優先する",
             "- 新しい設定事実は必要最小限に留める",
+            *(
+                ["", format_obligation_contract(obligation_contract)]
+                if obligation_contract
+                else []
+            ),
         ]
     )
 
@@ -612,8 +618,16 @@ def main():
     written_files.append(planning_gate_path)
 
     if args.mode == "draft":
+        obligation_contract = build_obligation_contract(scene_ref, scene_plan)
+        obligation_path = os.path.join(runtime_dir, "obligation_contract.json")
+        write_obligation_contract(obligation_path, obligation_contract)
+        written_files.append(obligation_path)
+
         scene_brief_path = os.path.join(runtime_dir, "scene_brief_compact.md")
-        write_text_file(scene_brief_path, build_scene_brief(chapter_block, scene_ref, project_dir, planning_meta) + "\n")
+        write_text_file(
+            scene_brief_path,
+            build_scene_brief(chapter_block, scene_ref, project_dir, planning_meta, obligation_contract=obligation_contract) + "\n",
+        )
         written_files.append(scene_brief_path)
 
         continuity_path = os.path.join(runtime_dir, "continuity_pack.md")

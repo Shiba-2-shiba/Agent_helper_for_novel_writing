@@ -11,8 +11,10 @@ from novel_agent.text_quality import (
     dialogue_ratio_hint,
     paragraph_count,
 )
+from novel_agent.anti_ai_style import analyze_anti_ai_style
 from novel_agent.story_state import update_story_state_from_check
 from novel_agent.ledgers import update_quality_budget_from_check
+from novel_agent.obligations import check_obligations, load_obligation_contract
 from novel_agent.trace import append_trace_event
 from prompt_utils import (
     count_completed_scene_files,
@@ -167,6 +169,28 @@ def main():
         paragraph_count_value=paragraph_count_value,
         dialogue_ratio=dialogue_ratio,
     )
+    obligation_path = os.path.join(runtime_dir, "obligation_contract.json")
+    obligation_contract = load_obligation_contract(obligation_path)
+    obligation_assessment = check_obligations(project_dir, obligation_contract, scene_type=scene_type)
+    if obligation_assessment["blocking_issues"]:
+        quality_assessment["blocking_issues"].extend(obligation_assessment["blocking_issues"])
+        quality_assessment["status"] = "fail"
+    elif obligation_assessment["warnings"]:
+        quality_assessment["warnings"].extend(obligation_assessment["warnings"])
+        if quality_assessment["status"] == "pass":
+            quality_assessment["status"] = "warning"
+    anti_ai_assessment = analyze_anti_ai_style(body_text)
+    if anti_ai_assessment["warnings"]:
+        quality_assessment["warnings"].extend(
+            {
+                "type": f"anti_ai_style:{warning['type']}",
+                "message": warning["message"],
+                "evidence": warning.get("evidence", ""),
+            }
+            for warning in anti_ai_assessment["warnings"]
+        )
+        if quality_assessment["status"] == "pass":
+            quality_assessment["status"] = "warning"
 
     report = {
         "target_file": text_path,
@@ -192,6 +216,9 @@ def main():
         "forbidden_hits_detail": forbidden_hit_details,
         "paragraph_count": paragraph_count_value,
         "dialogue_ratio_hint": dialogue_ratio,
+        "obligation_status": obligation_assessment["status"],
+        "obligation_issues": obligation_assessment["blocking_issues"] + obligation_assessment["warnings"],
+        "anti_ai_style": anti_ai_assessment,
         **quality_assessment,
     }
 

@@ -289,6 +289,13 @@ def evaluate_quality_budget_for_expand(project_dir, scene_ref, report):
             "issue_key": "forbidden_hit",
             "status": "blocked_inappropriate_issue",
         }
+    if report.get("obligation_status") == "fail":
+        return {
+            "allowed": False,
+            "reason": "expansion is not appropriate for issue type: obligation_failure",
+            "issue_key": "obligation_failure",
+            "status": "blocked_inappropriate_issue",
+        }
     if not report.get("needs_expand"):
         return {
             "allowed": False,

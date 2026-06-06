@@ -172,6 +172,11 @@
 - `runtime/planning_gate_brief.md` があれば、長編の gate 判定と次 planning action の正本として優先参照する
 - `planning_gate_enabled=true` かつ `request_compact.md` または `state_schema_novel.yaml` の `planning_gate_status != ready` なら、本文執筆へ進めない
 - `runtime/quality_budget_ledger.json` が修復予算超過や不適切な expansion を示す場合は、追加 prompt 生成を続けず `revision-editor` / `consistency-auditor` / 手動確認へ戻る
+- scene 完了判断では `runtime/check_report.json` だけでなく `runtime/approval_ledger.json` を確認し、`status=fail` や stale approval のシーンを export 対象にしない
+- 標準運用の入口には `scripts/run_scene_pipeline.py` を使ってよい。個別 script が必要な場合のみ `build_runtime_context.py` / `check_scene_output.py` などへ直接戻る
+- export 前や再開前に不整合が疑わしい場合は `scripts/sync_project_health.py --project <project> --fix-safe` を使い、派生物だけを再生成する
+- `runtime/scenes/<scene>/<mode>/obligation_contract.json` がある場合は、scene の依存・回収義務・保持義務の機械可読な補助契約として扱う
+- `check_report.json` の `anti_ai_style` warning は失敗ではなく、`consistency-auditor` / `prose-polisher` / `revision-editor` の入力として扱う
 - 再開整理では `runtime/resume_brief.md` があれば優先参照する
 - 再開整理で前回判断の根拠が必要な場合は、`agent/trace/trace_min.txt` または `scripts/compile_agent_trace.py --grep <pattern>` を使い、必要な箇所だけ正本へ戻る
 - 文体契約、進捗、キャラ制約は `runtime/` に不足がある場合のみ `state_schema_*.yaml` と `memory/global_notes.md` を補助参照する

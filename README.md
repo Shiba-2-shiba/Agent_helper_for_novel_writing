@@ -119,6 +119,27 @@ python scripts/compile_agent_trace.py --project my_novel --grep "scene_checked|r
 - `runtime/scene_summaries.jsonl` と `related_context_pack.md` は、全文再投入ではなく短い要約と正本 pointer を渡します
 - `agent/trace/` は runtime 生成や check の判断履歴を復元するための project-local trace です
 
+#### Scene Pipeline / 承認・書き出し
+
+日常運用では、個別 script を直接呼ぶ代わりに薄い統合 CLI を使えます。
+
+```bash
+python scripts/run_scene_pipeline.py prepare --project my_novel --chapter 2 --scene 2-3
+python scripts/run_scene_pipeline.py prompt --project my_novel
+python scripts/run_scene_pipeline.py check --project my_novel --text chapter_2_scene_3.txt
+python scripts/run_scene_pipeline.py repair --project my_novel --text chapter_2_scene_3.txt
+python scripts/run_scene_pipeline.py approve --project my_novel --scene 2-3
+python scripts/run_scene_pipeline.py export --project my_novel
+python scripts/run_scene_pipeline.py health --project my_novel --fix-safe
+```
+
+- `approve_scene.py` は `check_report.json` が `fail` のシーンを承認しません
+- `warning` のシーンは `--allow-warnings` がある場合だけ承認できます
+- 承認時は本文 hash を `runtime/approval_ledger.json` に保存し、本文変更後の stale approval を export 前に検出します
+- `export_manuscript.py` は承認済み scene txt だけを `exports/manuscript.md` に結合します
+- `sync_project_health.py` は scene summaries / story state / trace view などの派生物を `--fix-safe` で再生成できます
+- `check_scene_output.py` は `obligation_contract.json` に基づく依存欠落を blocking issue とし、反AI文体パターンは warning として出します
+
 #### ステップ4: 補助の legacy フル文脈プロンプトを使う（高コスト・手動運用のみ）
 ```bash
 # テンプレート全体を読み込むため、常用せず必要時だけ使う

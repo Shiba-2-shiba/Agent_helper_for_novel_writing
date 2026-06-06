@@ -2077,6 +2077,208 @@ class TestRuntimeRefactorScripts:
         assert "ERROR: ANCHOR does not match paragraph P1" in result.stdout
 
 
+class TestScenePipelineRefactor:
+    def _write_runtime_check(self, project_dir, scene_id, status):
+        runtime_dir = scene_runtime_dir(project_dir, scene_id, "draft")
+        os.makedirs(runtime_dir, exist_ok=True)
+        chapter, scene = scene_id.split("-", 1)
+        report = {
+            "status": status,
+            "target_file": os.path.join(project_dir, f"chapter_{chapter}_scene_{scene}.txt"),
+            "needs_expand": False,
+            "blocking_issues": [] if status != "fail" else [{"type": "forced_fail"}],
+            "warnings": [{"type": "forced_warning"}] if status == "warning" else [],
+        }
+        write_utf8(os.path.join(runtime_dir, "check_report.json"), json.dumps(report, ensure_ascii=False))
+        return runtime_dir
+
+    def test_approve_scene_rejects_fail_and_warning_without_flag(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        self._write_runtime_check(project_dir, "2-2", "fail")
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-2"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "cannot approve" in result.stdout
+
+        self._write_runtime_check(project_dir, "2-2", "warning")
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-2"],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "--allow-warnings" in result.stdout
+
+    def test_approve_and_export_approved_scene_only(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        self._write_runtime_check(project_dir, "2-1", "pass")
+
+        approve = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-1"],
+            capture_output=True,
+            text=True,
+        )
+        assert approve.returncode == 0, approve.stdout + approve.stderr
+
+        export = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "export_manuscript.py"), "--project", project_dir],
+            capture_output=True,
+            text=True,
+        )
+        assert export.returncode == 0, export.stdout + export.stderr
+        manuscript = open(os.path.join(project_dir, "exports", "manuscript.md"), "r", encoding="utf-8").read()
+        assert "奇妙な依頼書" in manuscript
+        assert "橋は崩れ" not in manuscript
+        assert "body.md" not in manuscript
+
+    def test_export_rejects_stale_approval(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        self._write_runtime_check(project_dir, "2-1", "pass")
+        subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-1"],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        with open(os.path.join(project_dir, "chapter_2_scene_1.txt"), "a", encoding="utf-8") as handle:
+            handle.write("改稿で本文が変わった。")
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "export_manuscript.py"), "--project", project_dir],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 1
+        assert "stale approval detected" in result.stdout
+
+    def test_run_scene_pipeline_prepare_and_prompt(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        prepare = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "run_scene_pipeline.py"),
+                "prepare",
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert prepare.returncode == 0, prepare.stdout + prepare.stderr
+        assert "NEXT: run prompt" in prepare.stdout
+
+        prompt = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "run_scene_pipeline.py"), "prompt", "--project", project_dir],
+            capture_output=True,
+            text=True,
+        )
+        assert prompt.returncode == 0, prompt.stdout + prompt.stderr
+        assert "NEXT: write scene text" in prompt.stdout
+
+    def test_runtime_context_writes_obligation_contract(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        result = subprocess.run(
+            [
+                sys.executable,
+                os.path.join(SCRIPTS_DIR, "build_runtime_context.py"),
+                "--project",
+                project_dir,
+                "--chapter",
+                "2",
+                "--scene",
+                "2-3",
+                "--mode",
+                "draft",
+            ],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        runtime_dir = scene_runtime_dir(project_dir, "2-3", "draft")
+        contract = json.load(open(os.path.join(runtime_dir, "obligation_contract.json"), "r", encoding="utf-8"))
+        assert contract["required_dependencies"] == ["2-2"]
+        brief = open(os.path.join(runtime_dir, "scene_brief_compact.md"), "r", encoding="utf-8").read()
+        assert "## Obligation Contract" in brief
+
+    def test_check_scene_output_blocks_missing_obligation_dependency(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        scene_path = os.path.join(project_dir, "chapter_2_scene_3.txt")
+        write_utf8(scene_path, "主人公は決断した。" * 80)
+        runtime_dir = scene_runtime_dir(project_dir, "2-3", "draft")
+        os.makedirs(runtime_dir, exist_ok=True)
+        write_utf8(os.path.join(runtime_dir, "style_contract_compact.md"), "# Style\n")
+        write_utf8(os.path.join(runtime_dir, "scene_brief_compact.md"), "Scene Type: standard\nLength Band: 100 / 150 / 2000\n")
+        write_utf8(
+            os.path.join(runtime_dir, "obligation_contract.json"),
+            json.dumps({"version": 1, "scene_id": "2-3", "required_dependencies": ["2-9"]}, ensure_ascii=False),
+        )
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "check_scene_output.py"), "--project", project_dir, "--text", scene_path],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.load(open(os.path.join(runtime_dir, "check_report.json"), "r", encoding="utf-8"))
+        assert report["status"] == "fail"
+        assert report["obligation_status"] == "fail"
+        assert any(item["type"] == "missing_required_dependency" for item in report["blocking_issues"])
+
+    def test_check_scene_output_adds_anti_ai_warning_without_fail(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        scene_path = os.path.join(project_dir, "chapter_2_scene_3.txt")
+        text = (
+            "つまり彼は理由を説明した。なぜならそれは必要だった。"
+            "要するに状況は変わらなかった。言い換えれば、迷いは残った。"
+            "それは彼にとって重い選択だった。"
+        ) * 8
+        write_utf8(scene_path, text)
+        runtime_dir = scene_runtime_dir(project_dir, "2-3", "draft")
+        os.makedirs(runtime_dir, exist_ok=True)
+        write_utf8(os.path.join(runtime_dir, "style_contract_compact.md"), "# Style\n")
+        write_utf8(os.path.join(runtime_dir, "scene_brief_compact.md"), "Scene Type: standard\nLength Band: 100 / 150 / 3000\n")
+
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "check_scene_output.py"), "--project", project_dir, "--text", scene_path],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        report = json.load(open(os.path.join(runtime_dir, "check_report.json"), "r", encoding="utf-8"))
+        assert report["status"] == "warning"
+        assert report["anti_ai_style"]["status"] == "warning"
+        assert any(item["type"].startswith("anti_ai_style:") for item in report["warnings"])
+        assert report["blocking_issues"] == []
+
+    def test_project_health_reports_warning_and_fix_safe(self, tmp_path):
+        project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        result = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "sync_project_health.py"), "--project", project_dir],
+            capture_output=True,
+            text=True,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert "health status=warning" in result.stdout
+
+        fixed = subprocess.run(
+            [sys.executable, os.path.join(SCRIPTS_DIR, "sync_project_health.py"), "--project", project_dir, "--fix-safe", "--json"],
+            capture_output=True,
+            text=True,
+        )
+        assert fixed.returncode == 0, fixed.stdout + fixed.stderr
+        assert os.path.isfile(os.path.join(project_dir, "runtime", "health_report.json"))
+        assert os.path.isfile(os.path.join(project_dir, "runtime", "scene_summaries.jsonl"))
+        assert os.path.isfile(os.path.join(project_dir, "runtime", "story_state.json"))
+
+
 # ---------------------------------------------------------------------------
 # eval_skill_trigger_qa.py のテスト
 # ---------------------------------------------------------------------------

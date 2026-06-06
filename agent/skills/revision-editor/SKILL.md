@@ -14,6 +14,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 - `agent/memory/global_notes.md`
 - 対象シーンの `txt`
 - 対象 scene の `runtime/check_report.json` と `runtime/quality_budget_ledger.json`（あれば）
+- 対象 scene の `runtime/obligation_contract.json` と `runtime/health_report.json`（あれば）
 - 必要なら直前、直後シーン
 - 章の方向性変更が絡む場合のみ `body.md`
 
@@ -31,6 +32,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 - 残すべき要素と変える要素を分ける
 - 変更が局所修正で足りるか、構成再設計が必要か判断する
 - `quality_budget_ledger.json` で同一 issue の修復予算が尽きている場合は、なぜ expansion では直らないかを先に特定する
+- `obligation_status=fail` の場合は、依存欠落・必須到達点・回収義務のどれが原因かを先に切り分け、単純な文字数増補として扱わない
 
 ## 2. 改稿方針を決める
 
@@ -54,6 +56,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 - 新しい矛盾を生んでいないか
 - 直後シーンへの接続が崩れていないか
 - 章方針まで変わるなら `body.md` の更新が必要か確認する
+- `anti_ai_style` warning が出ている場合は、説明過多・同形反復・会話の説明化を局所的に減らす
 
 # Handoff
 

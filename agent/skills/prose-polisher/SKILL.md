@@ -13,6 +13,7 @@ description: Improve readability, tone consistency, density, and endings after t
 - `agent/state_schema_novel.yaml`
 - `agent/memory/global_notes.md`
 - 対象シーンまたは章本文
+- 対象 scene の `runtime/check_report.json`（あれば）
 
 # Required Inputs
 
@@ -38,6 +39,7 @@ description: Improve readability, tone consistency, density, and endings after t
 - 見出し
 - 箇条書き
 - 不要な重複説明
+- `anti_ai_style` warning の説明過多、三点列挙、同形段落、文末反復、会話の説明化
 
 # Handoff
 
@@ -48,6 +50,7 @@ description: Improve readability, tone consistency, density, and endings after t
 
 - 仕上げ後の本文
 - 調整した観点
+- 残った `anti_ai_style` warning がある場合の短い注記
 
 # Do Not
 
