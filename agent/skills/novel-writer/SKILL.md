@@ -15,6 +15,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - 対象プロジェクトの `runtime/planning_gate_brief.md`（あれば gate 状態の確認を優先）
 - 対象シーンの scene-scoped `scene_brief_compact.md`
 - 対象シーンの scene-scoped `continuity_pack.md`
+- 対象シーンの scene-scoped `related_context_pack.md`（あれば、全文ではなく pointer と短い要約として参照）
 - 対象シーンの scene-scoped `request_compact.md`
 - `runtime/` に不足がある場合のみ `agent/state_schema_novel.yaml`
 - `runtime/` に不足がある場合のみ `agent/memory/global_notes.md`
@@ -54,6 +55,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - `Target Length Profile` は補助情報として扱い、本文長の制御自体は `Length Band` を正本とする
 - `runtime/` に不足がある場合のみ、対象シーンの章プロット、文体契約、進捗を補助参照する
 - `runtime/continuity_pack.md` を優先し、直前シーンの感情、位置関係、会話温度を引き継ぐ
+- `runtime/related_context_pack.md` がある場合は、関連シーンの全文を読む前に pointer と短い要約だけで足りるか確認する
 - 章の方針変更がある場合のみ `body.md` を確認する
 
 ## 3. 初稿を書く

@@ -6,6 +6,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 
+from novel_agent.story_state import initialize_story_state
 from prompt_utils import (
     collect_scene_metadata,
     collect_missing_dependencies,
@@ -178,6 +179,7 @@ def main():
             "output_path": suggest_scene_output_path(project_dir, dependency_ref),
             "reason": f"{missing_dependencies[0]['scene_id']} depends_on {missing_dependencies[0]['depends_on']}",
         }
+    initialize_story_state(project_dir)
 
     report = {
         "project": project_dir,

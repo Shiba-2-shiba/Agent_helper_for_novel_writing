@@ -4,6 +4,7 @@ import os
 import re
 import sys
 
+from novel_agent.trace import append_trace_event
 from prompt_utils import (
     RUNTIME_PROMPT_WARN_LIMIT,
     UserFacingError,
@@ -187,6 +188,15 @@ def main():
     prompt_path = os.path.join(runtime_dir, "expand_prompt.txt")
     write_text_file(instruction_path, instruction_text + "\n")
     write_text_file(prompt_path, prompt + "\n")
+    append_trace_event(
+        project_dir,
+        event_type="patch_prompt_generated",
+        chapter=scene_ref["chapter"] if scene_ref else None,
+        scene=scene_ref["canonical_id"] if scene_ref else "",
+        summary=f"expand prompt generated missing_chars={missing_chars}",
+        artifacts=[instruction_path, prompt_path],
+        tokens_estimate=estimated_tokens,
+    )
 
     if not bool(report.get("needs_expand")):
         print("WARN: needs_expand=false but expand prompt requested")

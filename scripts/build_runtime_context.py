@@ -4,6 +4,9 @@ import re
 import sys
 from datetime import datetime, timezone
 
+from novel_agent.ledgers import append_token_ledger, register_artifacts
+from novel_agent.scene_index import refresh_scene_summaries, render_related_context_pack
+from novel_agent.trace import append_trace_event
 from prompt_utils import (
     compute_planned_totals,
     DEFAULT_MAX_CHARS,
@@ -45,6 +48,16 @@ from prompt_utils import (
     validate_positive_int,
     write_text_file,
 )
+
+
+RUNTIME_ARTIFACT_TYPES = {
+    "style_contract_compact.md": "style_contract",
+    "request_compact.md": "request_compact",
+    "planning_gate_brief.md": "planning_gate_brief",
+    "scene_brief_compact.md": "scene_brief",
+    "continuity_pack.md": "continuity_pack",
+    "resume_brief.md": "resume_brief",
+}
 
 
 def _extract_outline_chapter_numbers(outline_text):
@@ -106,6 +119,29 @@ def build_planning_gate_brief(planning_meta, outline_text):
             f"- {next_action}",
         ]
     )
+
+
+def _artifact_type_for_runtime_file(path):
+    return RUNTIME_ARTIFACT_TYPES.get(os.path.basename(path), "runtime_artifact")
+
+
+def _register_runtime_artifacts(project_dir, written_files, outline_path):
+    depends_on = [outline_path] if outline_path and os.path.isfile(outline_path) else []
+    items = []
+    for path in written_files:
+        artifact_type = _artifact_type_for_runtime_file(path)
+        scene_scope = os.path.basename(os.path.dirname(os.path.dirname(path))) if "scenes" in path else "global"
+        mode_scope = os.path.basename(os.path.dirname(path))
+        items.append(
+            {
+                "artifact_id": f"{artifact_type}:{scene_scope}:{mode_scope}",
+                "artifact_type": artifact_type,
+                "path": path,
+                "depends_on_paths": depends_on,
+            }
+        )
+    if items:
+        register_artifacts(project_dir, items)
 
 
 def _split_payoff_seed(raw_value):
@@ -583,6 +619,25 @@ def main():
         continuity_path = os.path.join(runtime_dir, "continuity_pack.md")
         write_text_file(continuity_path, build_continuity_pack(previous_pack))
         written_files.append(continuity_path)
+
+        refresh_scene_summaries(project_dir)
+        related_context_path = os.path.join(runtime_dir, "related_context_pack.md")
+        scene_desc_for_related = extract_scene_description(chapter_block, scene_ref["scene"])
+        chapter_summary_for_related = extract_chapter_summary(chapter_block)
+        related_query = "\n".join(
+            part
+            for part in (
+                scene_desc_for_related,
+                chapter_summary_for_related,
+                scene_plan["purpose"] if scene_plan else "",
+            )
+            if part
+        )
+        write_text_file(
+            related_context_path,
+            render_related_context_pack(project_dir, target_scene_id=scene_ref["canonical_id"], query_text=related_query),
+        )
+        written_files.append(related_context_path)
     else:
         session_notes = read_optional_text(
             os.path.join(project_dir, "agent", "memory", "session_notes.md")
@@ -593,7 +648,16 @@ def main():
         write_text_file(resume_path, build_resume_brief(project_dir, scene_ref, previous_pack, session_notes, planning_meta) + "\n")
         written_files.append(resume_path)
 
+        refresh_scene_summaries(project_dir)
+        related_context_path = os.path.join(runtime_dir, "related_context_pack.md")
+        write_text_file(
+            related_context_path,
+            render_related_context_pack(project_dir, target_scene_id=scene_ref["canonical_id"], query_text=session_notes),
+        )
+        written_files.append(related_context_path)
+
     update_runtime_index(project_dir, mode=args.mode, scene_ref=scene_ref, runtime_dir=runtime_dir)
+    _register_runtime_artifacts(project_dir, written_files, outline_path)
     current_mode = "novel" if args.mode == "draft" else "resume_orchestrator"
     recommended_skill = "novel-writer" if args.mode == "draft" else "resume-orchestrator"
     active_scene_id = scene_ref["canonical_id"]
@@ -649,6 +713,33 @@ def main():
                 "completed_scene_count": count_completed_scene_files(project_dir),
                 "total_chars_written": count_total_written_chars(project_dir),
             },
+        },
+    )
+    append_trace_event(
+        project_dir,
+        event_type="runtime_generated",
+        chapter=active_chapter,
+        scene=active_scene_id,
+        summary=f"{args.mode} runtime generated",
+        artifacts=written_files,
+    )
+    section_tokens = {
+        os.path.basename(path): estimate_tokens(read_text_file(path))
+        for path in written_files
+        if os.path.isfile(path)
+    }
+    append_token_ledger(
+        project_dir,
+        {
+            "command": "build_runtime_context",
+            "projection": args.mode,
+            "chapter": active_chapter,
+            "scene": active_scene_id,
+            "runtime_dir": runtime_dir,
+            "total_estimated_tokens": sum(section_tokens.values()),
+            "sections": section_tokens,
+            "budget": None,
+            "status": "recorded",
         },
     )
 

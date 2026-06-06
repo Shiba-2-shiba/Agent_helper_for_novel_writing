@@ -100,6 +100,23 @@ python scripts/apply_expand_edits.py --project my_novel --text draft_scene.txt -
 `build_draft_prompt.py` と `build_expand_prompt.py` は、生成したプロンプトの概算トークン数も標準出力に出し、`runtime` としては重くなりすぎた場合に警告します。
 差分返答では、`ANCHOR:` に `Existing Paragraph Map` の該当抜粋をそのまま使う前提です。
 
+#### Context Compiler / Ledger 補助
+
+長編運用では、`runtime-first` に加えて正本へ戻れる pointer-first の補助ファイルを使えます。
+
+```bash
+python scripts/compile_project_context.py --project my_novel --chapter 2 --scene 2-3 --mode draft --grep "伏線|障害"
+python scripts/build_scene_index.py --project my_novel
+python scripts/compile_agent_trace.py --project my_novel --grep "scene_checked|runtime_generated"
+```
+
+- `runtime/context/` には full / min / grep view と `context_index.json` が出ます
+- `runtime/artifact_ledger.json` は古い runtime 生成物の検出に使います
+- `runtime/token_ledger.jsonl` は prompt / projection の概算トークンを記録します
+- `runtime/story_state.json` は scene check 結果と進捗を小さな事実台帳として保持します
+- `runtime/scene_summaries.jsonl` と `related_context_pack.md` は、全文再投入ではなく短い要約と正本 pointer を渡します
+- `agent/trace/` は runtime 生成や check の判断履歴を復元するための project-local trace です
+
 #### ステップ4: 補助の legacy フル文脈プロンプトを使う（高コスト・手動運用のみ）
 ```bash
 # テンプレート全体を読み込むため、常用せず必要時だけ使う
