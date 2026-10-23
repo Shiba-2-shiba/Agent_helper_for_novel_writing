@@ -30,6 +30,10 @@ def main():
     prepare.add_argument("--chapter", required=True)
     prepare.add_argument("--scene", required=True)
     prepare.add_argument("--mode", default="draft", choices=["draft", "resume"])
+    prepare.add_argument("--participant", action="append", default=None)
+    prepare.add_argument("--pov-character", default=None)
+    prepare.add_argument("--entity", action="append", default=[])
+    prepare.add_argument("--thread", action="append", default=[])
     prepare.add_argument("--force", action="store_true")
 
     prompt = sub.add_parser("prompt")
@@ -73,6 +77,13 @@ def main():
         script_args = ["--project", project_dir, "--chapter", args.chapter, "--scene", args.scene, "--mode", args.mode]
         if args.force:
             script_args.append("--force")
+        for participant in args.participant or []:
+            script_args.extend(["--participant", participant])
+        if args.pov_character is not None:
+            script_args.extend(["--pov-character", args.pov_character])
+        for option in ("entity", "thread"):
+            for value in getattr(args, option):
+                script_args.extend(["--" + option, value])
         _run_script("build_runtime_context.py", script_args)
         print("NEXT: run prompt to build draft_prompt.txt")
     elif args.command == "prompt":

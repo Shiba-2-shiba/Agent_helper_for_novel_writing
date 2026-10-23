@@ -13,6 +13,7 @@ description: Diagnose plot, setting, pacing, continuity, and style issues withou
 - `agent/state_schema_novel.yaml`
 - `agent/memory/global_notes.md`
 - 対象シーン、章、または設定ファイル
+- 対象sceneの現行 `dialogue_context_pack.md` と `docs/dialogue_context.md`（会話を扱う場合。欠損・staleなら同じsceneで再prepare）
 - 必要なら `runtime/health_report.json`
 - 必要なら対象 scene の `runtime/check_report.json` / `runtime/obligation_contract.json`
 
@@ -42,6 +43,8 @@ description: Diagnose plot, setting, pacing, continuity, and style issues withou
 - 次話フックの弱さ
 - obligation 未達
 - anti-AI style warning
+
+会話は共通ルーブリックに沿って返答の目的、語彙・リズム、関係を確認する。POVの受け取りや考え直しが返答に効く要所を具体的な本文と読者への影響で診断し、相手の内心の断定と不確かな推測を分ける。心理の記載がないだけで欠陥とせず、速度や余白のための省略を評価する。カード不足・解釈の相違は人物崩壊の断定と分け、回数ノルマや全発話への仕草追加を修正条件にしない。機械checkのpassはこの評価の代わりにならない。
 
 ## 3. 影響度で並べる
 

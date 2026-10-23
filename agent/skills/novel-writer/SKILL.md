@@ -15,6 +15,8 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - 対象プロジェクトの `runtime/planning_gate_brief.md`（あれば gate 状態の確認を優先）
 - 対象シーンの scene-scoped `scene_brief_compact.md`
 - 対象シーンの scene-scoped `continuity_pack.md`
+- 対象シーンの scene-scoped `dialogue_context_pack.md`（必須。未設定の旧案件でも生成される）
+- `docs/dialogue_context.md`（会話カードの選択と選択的な主観の共通ルーブリック）
 - 対象シーンの scene-scoped `related_context_pack.md`（あれば、全文ではなく pointer と短い要約として参照）
 - 対象シーンの scene-scoped `request_compact.md`
 - `runtime/` に不足がある場合のみ `agent/state_schema_novel.yaml`
@@ -33,6 +35,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - 必要なら `scene_type`
 - 必要なら `length_band`
 - 必要なら既存の対象シーン `txt` の有無
+- 必要なら参加者IDとPOV人物ID（別指定。シーン既定値を明示上書きする場合）
 
 # Procedure
 
@@ -41,7 +44,8 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - 対象シーンの scene-scoped `runtime/draft_prompt.txt` があり、対象の `chapter` / `scene` と矛盾しないなら再利用する
 - `runtime/draft_prompt.txt` がない、または `runtime/` の必須ファイルが欠けている場合は、先に以下を実行して更新する
 - `python scripts/build_runtime_context.py --project <project_path> --chapter <chapter> --scene <scene> --mode draft`
-- `python scripts/build_draft_prompt.py --project <project_path>`
+- `python scripts/build_draft_prompt.py --project <project_path> --scene <scene>`
+- 会話カードは `docs/dialogue_context.md` のprepare手順で対象参加者・POVだけを選ぶ。参加者未指定・カード欠落のwarningは根拠のない人物設定で埋めず、必要な入力を確認する
 - `Depends On` があるシーンは、依存先 `txt` が無い場合に本文執筆へ進めない
 - `request_compact.md` または `scene_brief_compact.md` に `Planning Gate: blocked` がある場合は、本文執筆へ進まず `setting-creator` へ戻す
 - `runtime/` が使えない場合は正本を調べて同じsceneで再prepareする。別sceneのlatestや未検証の古いruntimeを執筆へ流用しない
@@ -49,7 +53,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 ## 2. 文脈を集める
 
 - まず `runtime/draft_prompt.txt` を読み、そこに含まれる制約を優先する
-- `runtime/draft_prompt.txt` がなければ、`runtime/style_contract_compact.md`、`runtime/scene_brief_compact.md`、`runtime/continuity_pack.md`、`runtime/request_compact.md` を読む
+- `runtime/draft_prompt.txt` がなければ、`runtime/style_contract_compact.md`、`runtime/scene_brief_compact.md`、`runtime/continuity_pack.md`、`runtime/dialogue_context_pack.md`、`runtime/request_compact.md` を読む
 - `runtime/planning_gate_brief.md` がある場合は、`Planning Gate` が `ready` かを本文執筆前に確認する
 - `runtime/scene_brief_compact.md` に `Scene Type` と `Length Band` がある場合は、それを文字数契約の正本として扱う
 - `runtime/scene_brief_compact.md` または `runtime/obligation_contract.json` に `Obligation Contract` がある場合は、依存シーン、必須到達点、回収/種まきを本文の契約として扱う
@@ -66,7 +70,9 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - `bridge` は接続と整理を優先し、無理に膨らませない
 - `standard` は通常の前進シーンとして、目的と抵抗を明確に保つ
 - `anchor` / `climax` は感情変化、対立、決断、回収を厚くする
-- 地の文、会話、内面描写の比率が偏りすぎないようにする
+- 地の文、会話、内面描写は場面の効果に応じて配分し、固定比率を課さない
+- 会話は `dialogue_context_pack.md` と共通ルーブリックに沿い、返答の目的・語彙とリズム・関係から書き分ける
+- 返答や読者の読みを変える要所だけ、POVが受けた調子・印象と不確かな解釈や考え直しを返し方へつなぐ。台詞だけで伝わる箇所や意図的な余白を保ち、全発話に心理・仕草を補わない
 - 次シーンへつながる未解決要素を残す
 
 ## 4. 機械チェックと自己評価を行う
@@ -86,6 +92,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - 文字数が対象シーンの `Length Band` に収まっている、または少なくとも `min` 未満ではない
 - 視点がぶれていない
 - 主要キャラの口調が契約から外れていない
+- 会話の主観が相手の内心の断定になっておらず、省略を含む場面の効果が保たれている（機械checkとは別の自己評価）
 - シーンの目的が達成されている
 - 本文中に見出し、箇条書き、メタ発言がない
 

@@ -13,6 +13,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 - `agent/state_schema_novel.yaml`
 - `agent/memory/global_notes.md`
 - 対象シーンの `txt`
+- 対象sceneの現行 `dialogue_context_pack.md` と `docs/dialogue_context.md`（会話を扱う場合。欠損・staleなら同じsceneで再prepare）
 - 対象 scene の `runtime/check_report.json` と `runtime/quality_budget_ledger.json`（あれば）
 - 対象 scene の `runtime/obligation_contract.json` と `runtime/health_report.json`（あれば）
 - 必要なら直前、直後シーン
@@ -31,6 +32,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 - 現行テキストの弱点を整理する
 - 残すべき要素と変える要素を分ける
 - 変更が局所修正で足りるか、構成再設計が必要か判断する
+- 会話では共通ルーブリックで、返答の目的・語彙とリズム・関係のどこが弱いか、具体的な応酬から特定する。主観の省略が効いている箇所は保持点に分ける
 - `quality_budget_ledger.json` で同一 issue の修復予算が尽きている場合は、なぜ expansion では直らないかを先に特定する
 - `obligation_status=fail` の場合は、依存欠落・必須到達点・回収義務のどれが原因かを先に切り分け、単純な文字数増補として扱わない
 
@@ -48,6 +50,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 
 - 対象シーンのLength Bandを維持する。契約不明の旧案件だけ `1000-1500` をfallbackにする
 - 文体契約と前後接続を維持する
+- 返答の変化に根拠が足りない要所だけ、POVが受け取った調子・印象や不確かな解釈を局所的に補う。内面・仕草の一律追加でなく、既存の間や余白を残す
 - 明示的な差し替え依頼がある場合は対象シーンを更新する
 - 差し替え範囲が曖昧なら、改稿案として別扱いで提示してから反映する
 

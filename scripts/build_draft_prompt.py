@@ -103,7 +103,8 @@ def main():
     prompt_inputs = snapshot_dependencies(project_dir, [
         {"kind": "artifact", "path": path} for path in
         (style_path, brief_path, continuity_path, request_path, os.path.join(runtime_dir, "planning_gate_brief.md"),
-         os.path.join(runtime_dir, "story_memory_pack.md"), os.path.join(runtime_dir, "related_context_pack.md"))
+         os.path.join(runtime_dir, "story_memory_pack.md"), os.path.join(runtime_dir, "related_context_pack.md"),
+         os.path.join(runtime_dir, "dialogue_context_pack.md"))
     ] + ([{"kind": "projection", "selector": "memory_selection", "path": os.path.join(runtime_dir, "context_selection.json")}]
          if os.path.isfile(os.path.join(runtime_dir, "context_selection.json")) else []))
     style_contract = read_text_file(style_path).strip()
@@ -114,6 +115,10 @@ def main():
     for artifact in find_artifacts_by_paths(project_dir, (style_path, brief_path, continuity_path, request_path)):
         if artifact and artifact.get("status") == "stale":
             print(f"WARN: stale runtime artifact detected: {artifact.get('path')}")
+    from novel_agent.dialogue_context import read_dialogue_pack
+    dialogue_context, dialogue_warning = read_dialogue_pack(runtime_dir)
+    if dialogue_warning:
+        print("WARN: " + dialogue_warning)
     scene_brief_meta = parse_scene_brief_metadata(scene_brief)
     request_meta = parse_request_compact_metadata(request_compact)
     planning_gate_meta = parse_planning_gate_brief_metadata(planning_gate_brief)
@@ -171,6 +176,8 @@ def main():
                  "priority": 0, "source_ids": []},
                 {"name": "output_contract", "text": "## Output Contract\n" + output_contract, "required": True,
                  "priority": 100, "source_ids": []}]
+    sections.append({"name": "dialogue_context", "text": dialogue_context, "required": True,
+                     "priority": 1, "source_ids": ["dialogue_context_pack.md"]})
     if context_selection.get("memory"):
         sections.extend(memory_prompt_sections(context_selection["memory"]))
     elif memory_pack:
@@ -189,6 +196,7 @@ def main():
     estimated_tokens = estimate_tokens(prompt)
     part_estimates = {
         "style_contract": estimate_tokens(style_contract),
+        "dialogue_context": estimate_tokens(dialogue_context),
         "scene_brief": estimate_tokens(scene_brief),
         "continuity_pack": estimate_tokens(continuity_pack),
         "request_compact": estimate_tokens(request_compact),

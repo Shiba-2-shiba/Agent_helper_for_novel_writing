@@ -21,7 +21,7 @@ _OUTLINE_PATHS = [prefix + name for prefix in ("", "plot/", "memory/") for name 
 _GLOBAL_PATHS = ["agent/memory/global_notes.md", "memory/global_notes.md"]
 _SESSION_PATHS = ["agent/memory/session_notes.md", "memory/session_notes.md"]
 _SCENE_RE = re.compile(r"^(?:chapter_?(\d+)_scene_?(\d+)|scene_(\d+)-(\d+))\.txt$", re.IGNORECASE)
-_SELECTORS = {"check_policy", "runtime_policy", "resume_progress", "memory_selection"}
+_SELECTORS = {"check_policy", "runtime_policy", "resume_progress", "memory_selection", "dialogue_selection"}
 _HASH_ALGORITHM = "sha256-utf8-text-v1"
 
 
@@ -228,7 +228,7 @@ def _style_contract(global_notes, state, band):
 
     viewpoint = labeled(["視点", "POV", "pov", "point_of_view"], "未指定（既定: 一人称または近接三人称を固定）")
     tense = labeled(["地の文時制", "時制", "tense", "narration_tense"], "未指定（既定: 地の文は過去形で統一）")
-    tone = matching(["口調", "語尾", "敬語", "文体", "台詞"], ["主要キャラの語尾と話し方を固定する", "台詞と地の文で温度差を作りすぎない"])
+    tone = matching(["口調", "語尾", "敬語", "文体", "台詞", "会話"], ["主要キャラの語尾と話し方を固定する", "台詞と地の文で温度差を作りすぎない"])
     forbidden = matching(["禁止", "avoid", "forbid"], ["見出しや箇条書きの混入", "作者視点のメタ説明", "直前シーンと矛盾する設定変更"])
     return "\n".join(["# Style Contract Compact", "- 視点: " + viewpoint, "- 地の文時制: " + tense,
                       "- 口調ルール:"] + ["  - " + item for item in tone] + ["- 禁止表現:"] +
@@ -266,8 +266,10 @@ def current_check_policy(project_dir, scene_id):
                 "must_preserve": [], "required_payoff_touches": _split_values(payoff),
                 "required_dependencies": dependencies, "can_defer": [], "forbidden_crossings": []}
     members = _scene_members(project_dir, only={_scene_key(value) for value in dependencies}) if dependencies else []
-    sources = [outline_source, state_source, global_source]
-    return {"scene_id": scene_id, "length_band": band,
+    voice_source, voice_text = _source(project_dir, ["dialogue_voice.json"])
+    sources = [outline_source, state_source, global_source] + ([voice_source] if voice_source["exists"] else [])
+    return {**({"dialogue_voice_hash": _digest(voice_text)} if voice_source["exists"] else {}),
+            "scene_id": scene_id, "length_band": band,
             "style_contract": _style_contract(global_notes, state, band),
             "state_style_contract": _state_sections(state).get("style_contract", ""),
             "obligation_contract": contract,
@@ -307,12 +309,19 @@ def _planning_scalars(state):
 
 
 def _projection(project_dir, selector, scene_id, path=None):
+    if selector == "dialogue_selection":
+        absolute, relative = _path(project_dir, path)
+        payload = read_json(absolute, default_factory=dict)
+        return {"exists": os.path.isfile(absolute), "dialogue": payload.get("dialogue"),
+                "source_paths": [relative]}
     if selector == "memory_selection":
         absolute, relative = _path(project_dir, path)
         payload = read_json(absolute, default_factory=dict)
         # Final prompt reports are derived output; they must not change inputs.
         return {"exists": os.path.isfile(absolute),
-                "selection": {key: payload.get(key) for key in ("version", "config", "memory")},
+                "selection": {key: payload.get(key) for key in
+                              (("version", "config", "memory", "dialogue") if "dialogue" in payload
+                               else ("version", "config", "memory"))},
                 "source_paths": [relative]}
     if selector == "check_policy":
         return current_check_policy(project_dir, scene_id)
@@ -324,8 +333,10 @@ def _projection(project_dir, selector, scene_id, path=None):
     global_source, global_notes = _source(project_dir, _GLOBAL_PATHS)
     session_source, session_notes = _source(project_dir, _SESSION_PATHS, skip_empty=True)
     outline_source, outline = _source(project_dir, _OUTLINE_PATHS)
-    sources = [state_source, global_source, session_source, outline_source]
-    return {"outline": _outline_policy(outline), "planning": _planning_scalars(state),
+    voice_source, voice_text = _source(project_dir, ["dialogue_voice.json"])
+    sources = [state_source, global_source, session_source, outline_source] + ([voice_source] if voice_source["exists"] else [])
+    return {**({"dialogue_voice_hash": _digest(voice_text)} if voice_source["exists"] else {}),
+            "outline": _outline_policy(outline), "planning": _planning_scalars(state),
             "state": {name: sections.get(name, "") for name in ("targets", "profile", "style_contract", "story_constraints")},
             "global_notes": global_notes, "session_notes": session_notes,
             "sources": sources, "source_paths": [source["path"] for source in sources]}

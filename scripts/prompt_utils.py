@@ -978,7 +978,7 @@ def build_style_contract(project_dir, min_chars=DEFAULT_MIN_CHARS, target_chars=
     )
     tone_rules = _collect_style_lines(
         combined_text,
-        ["口調", "語尾", "敬語", "文体", "台詞"],
+        ["口調", "語尾", "敬語", "文体", "台詞", "会話"],
         [
             "主要キャラの語尾と話し方を固定する",
             "台詞と地の文で温度差を作りすぎない",

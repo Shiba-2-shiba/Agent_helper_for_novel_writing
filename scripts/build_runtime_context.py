@@ -541,6 +541,7 @@ def main():
     parser = argparse.ArgumentParser(description="Build compact runtime files for draft or resume mode.")
     parser.add_argument("--project", required=True, help="Path to the project directory")
     parser.add_argument("--pov-character", default=None, help="Explicit POV character ID; omitted means unknown knowledge")
+    parser.add_argument("--participant", action="append", default=None, help="Dialogue participant ID (repeatable); replaces scene defaults")
     parser.add_argument("--entity", action="append", default=[], help="Relevant entity ID (repeatable)")
     parser.add_argument("--thread", action="append", default=[], help="Relevant thread ID (repeatable)")
     parser.add_argument("--chapter", required=True, type=int, help="Current chapter number")
@@ -590,14 +591,26 @@ def _build_runtime_context_locked(project_dir, args):
     input_specs.extend([{"kind": "file", "path": "story_memory/accepted.json"},
                         {"kind": "file", "path": "runtime/approval_ledger.json"}])
     initial_inputs = snapshot_dependencies(project_dir, input_specs)
-    from novel_agent.story_memory import load_memory
+    from novel_agent.story_memory import load_memory, scene_key
+    from novel_agent.approvals import read_approval_ledger
     source_specs = []
     memory_before = load_memory(project_dir)
+    source_approvals = read_approval_ledger(project_dir)["scenes"] if memory_before["records"] else {}
     for record in memory_before["records"]:
         for source in record["sources"]:
             source_specs.append({"kind": "file", "path": source["path"]})
             if source.get("scene_id"):
                 source_specs.append({"kind": "projection", "selector": "check_policy", "scene_id": source["scene_id"]})
+                # A source approval can depend on the CLI-selected voices/POV.
+                # Guard its recorded path, including non-default runtimes, so a
+                # stale source cannot remain in an already-generated memory pack.
+                # Exclude target/future selections: prepare intentionally rewrites
+                # the target's selection, which must not invalidate itself.
+                if scene_key(source["scene_id"]) < scene_key(scene_ref["canonical_id"]):
+                    approval = source_approvals.get(source["scene_id"], {})
+                    for dependency in approval.get("check_inputs", []) or []:
+                        if isinstance(dependency, dict) and dependency.get("selector") == "dialogue_selection":
+                            source_specs.append(dependency)
     initial_inputs.extend(snapshot_dependencies(project_dir, source_specs))
     # Never leave first-generation partial packs looking like a legacy runtime.
     from novel_agent.runtime_paths import write_runtime_manifest
@@ -637,6 +650,10 @@ def _build_runtime_context_locked(project_dir, args):
         max_chars=length_band["max"],
     )
     style_contract += f"\n  - Length Band Source: {length_band['source']}"
+    from novel_agent.dialogue_context import build_dialogue_context
+    dialogue = build_dialogue_context(project_dir, scene_id=scene_ref["canonical_id"],
+                                      participants=getattr(args, "participant", None), pov_character_id=args.pov_character)
+    warnings.extend(dialogue["warnings"])
     previous_pack = find_previous_scene_pack(project_dir, scene_ref, previous_path)
     written_files = []
 
@@ -663,6 +680,10 @@ def _build_runtime_context_locked(project_dir, args):
     style_path = os.path.join(runtime_dir, "style_contract_compact.md")
     write_text_file(style_path, style_contract + "\n")
     written_files.append(style_path)
+
+    dialogue_path = os.path.join(runtime_dir, "dialogue_context_pack.md")
+    write_text_file(dialogue_path, dialogue["text"])
+    written_files.append(dialogue_path)
 
     request_path = os.path.join(runtime_dir, "request_compact.md")
     write_text_file(request_path, build_request_compact(args.mode, args.priority, scene_ref, planning_meta, length_band) + "\n")
@@ -726,14 +747,15 @@ def _build_runtime_context_locked(project_dir, args):
         written_files.append(related_context_path)
 
     memory_selection = select_memory(
-        project_dir, target_scene_id=scene_ref["canonical_id"], pov_character_id=args.pov_character,
+        project_dir, target_scene_id=scene_ref["canonical_id"], pov_character_id=dialogue["pov_character_id"],
         entity_ids=args.entity, thread_ids=args.thread,
     )
     memory_path = os.path.join(runtime_dir, "story_memory_pack.md")
     selection_path = os.path.join(runtime_dir, "context_selection.json")
     write_text_file(memory_path, render_memory_pack(memory_selection))
     atomic_write_json(selection_path, {"version": 1, "memory": memory_selection,
-                                     "config": {"pov_character_id": args.pov_character, "entity_ids": args.entity,
+                                     "dialogue": {key: value for key, value in dialogue.items() if key != "text"},
+                                     "config": {"pov_character_id": dialogue["pov_character_id"], "entity_ids": args.entity,
                                                 "thread_ids": args.thread, "target_scene_id": scene_ref["canonical_id"]}})
     written_files.extend([memory_path, selection_path])
     warnings.extend(memory_selection["warnings"])

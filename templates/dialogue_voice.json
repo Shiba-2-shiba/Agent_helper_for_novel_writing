@@ -1,0 +1,25 @@
+{
+  "version": 1,
+  "characters": {
+    "mira": {
+      "name": "ミラ",
+      "response_goal": "曖昧な返事には、相手が引き受ける範囲を確かめようとする。",
+      "word_choice": "身近な具体語を選び、抽象語には言い換えを求める。",
+      "rhythm": "短い問いを置き、答えを待つ。",
+      "relationship_stance": "レンには遠慮なく聞くが、答えを決めつけない。"
+    },
+    "ren": {
+      "name": "レン",
+      "response_goal": "即答を避け、まず条件を揃えようとする。",
+      "word_choice": "条件や範囲を示す語を選ぶ。",
+      "rhythm": "一度受け止めてから、短く留保を足す。",
+      "relationship_stance": "ミラの問いを軽く扱わず、約束できる範囲だけ答える。"
+    }
+  },
+  "scenes": {
+    "1-2": {
+      "participants": ["mira", "ren"],
+      "pov_character_id": "mira"
+    }
+  }
+}

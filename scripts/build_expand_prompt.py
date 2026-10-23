@@ -140,10 +140,11 @@ def main():
     selection_path = os.path.join(runtime_dir, "context_selection.json")
     memory_path = os.path.join(runtime_dir, "story_memory_pack.md")
     related_path = os.path.join(runtime_dir, "related_context_pack.md")
+    dialogue_path = os.path.join(runtime_dir, "dialogue_context_pack.md")
     input_specs = [{"kind": "file", "path": draft_path}, {"kind": "artifact", "path": report_path},
                    {"kind": "artifact", "path": style_path}]
     input_specs.extend({"kind": "artifact" if os.path.isfile(path) else "file", "path": path}
-                       for path in (memory_path, related_path))
+                       for path in (memory_path, related_path, dialogue_path))
     if os.path.isfile(selection_path):
         input_specs.append({"kind": "projection", "selector": "memory_selection", "path": selection_path})
     try:
@@ -152,6 +153,10 @@ def main():
         if report_path in str(exc):
             raise UserFacingError("check_report.json is invalid: %s" % exc)
         raise
+    from novel_agent.dialogue_context import read_dialogue_pack
+    dialogue_context, dialogue_warning = read_dialogue_pack(runtime_dir)
+    if dialogue_warning:
+        print("WARN: " + dialogue_warning)
     draft_text = read_text_file(draft_path).strip()
     from prompt_utils import build_style_contract
     style_contract = read_text_file(style_path).strip() if os.path.isfile(style_path) else build_style_contract(project_dir)[0]
@@ -212,6 +217,8 @@ def main():
     context_selection = read_json(selection_path, default_factory=dict)
     sections = [{"name": "required_expansion_constraints_and_target", "text": prompt,
                  "required": True, "priority": 0, "source_ids": []}]
+    sections.append({"name": "dialogue_context", "text": dialogue_context, "required": True,
+                     "priority": 1, "source_ids": ["dialogue_context_pack.md"]})
     if context_selection.get("memory"):
         sections.extend(memory_prompt_sections(context_selection["memory"]))
     elif os.path.isfile(memory_path):
@@ -231,6 +238,7 @@ def main():
     part_estimates = {
         "expand_instruction": estimate_tokens(instruction_text),
         "style_contract": estimate_tokens(style_contract),
+        "dialogue_context": estimate_tokens(dialogue_context),
         "paragraph_map": estimate_tokens(paragraph_map),
         "response_template": estimate_tokens(response_template),
     }

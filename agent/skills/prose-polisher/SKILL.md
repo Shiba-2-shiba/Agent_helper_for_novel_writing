@@ -13,6 +13,7 @@ description: Improve readability, tone consistency, density, and endings after t
 - `agent/state_schema_novel.yaml`
 - `agent/memory/global_notes.md`
 - 対象シーンまたは章本文
+- 対象sceneの現行 `dialogue_context_pack.md` と `docs/dialogue_context.md`（会話を扱う場合。欠損・staleなら同じsceneで再prepare）
 - 対象 scene の `runtime/check_report.json`（あれば）
 
 # Required Inputs
@@ -31,6 +32,8 @@ description: Improve readability, tone consistency, density, and endings after t
 - 語尾の揺れを減らす
 - 冗長な説明を圧縮する
 - 地の文と会話のリズムを整える
+- 共通ルーブリックに沿い、人物ごとの返答の目的・語彙とリズム・関係を均して消さない。POVの印象や解釈は不確かさを保ち、返し方に効く部分を残す
+- 台詞だけで伝わる心理の重複説明は圧縮する。沈黙・省略を欠落と決めつけず、心理や仕草を発話ごとに挿入しない
 - 引きや締めを少し強くする
 
 ## 3. 契約違反を除去する
@@ -57,5 +60,6 @@ description: Improve readability, tone consistency, density, and endings after t
 - 章構成まで変えない
 - キャラ解釈を勝手に変えない
 - 表現整理の範囲を超えて大規模改稿しない
+- 語尾や決め台詞のノルマを作らず、機械checkのpassを会話の文学的な合格と扱わない
 
 

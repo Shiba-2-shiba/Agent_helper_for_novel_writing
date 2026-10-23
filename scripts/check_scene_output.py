@@ -170,7 +170,9 @@ def main():
         policy = current_check_policy(project_dir, scene_ref["canonical_id"])
         scene_band = policy["length_band"]
         obligation_contract = policy["obligation_contract"]
-        specs = [{"kind": "projection", "selector": "check_policy", "scene_id": scene_ref["canonical_id"]}]
+        specs = [{"kind": "projection", "selector": "check_policy", "scene_id": scene_ref["canonical_id"]},
+                 {"kind": "projection", "selector": "dialogue_selection",
+                  "path": os.path.join(runtime_dir, "context_selection.json")}]
     else:
         # Standalone drafts never consume latest_by_mode or mutate scene state.
         runtime_dir = os.path.join(project_dir, "runtime")
