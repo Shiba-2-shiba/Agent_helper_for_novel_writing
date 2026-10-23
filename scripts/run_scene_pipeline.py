@@ -4,6 +4,7 @@ import subprocess
 import sys
 
 from prompt_utils import UserFacingError, resolve_project_path
+from novel_agent.approvals import REVIEWER_TYPES
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -51,6 +52,8 @@ def main():
     approve.add_argument("--project", required=True)
     approve.add_argument("--scene", required=True)
     approve.add_argument("--allow-warnings", action="store_true")
+    approve.add_argument("--reviewer-type", required=True, choices=REVIEWER_TYPES)
+    approve.add_argument("--reviewer-id", required=True)
 
     export = sub.add_parser("export")
     export.add_argument("--project", required=True)
@@ -95,7 +98,8 @@ def main():
         _run_script("build_expand_prompt.py", script_args)
         print("NEXT: apply local edits, then re-run check")
     elif args.command == "approve":
-        script_args = ["--project", project_dir, "--scene", args.scene]
+        script_args = ["--project", project_dir, "--scene", args.scene,
+                       "--reviewer-type", args.reviewer_type, "--reviewer-id", args.reviewer_id]
         if args.allow_warnings:
             script_args.append("--allow-warnings")
         _run_script("approve_scene.py", script_args)

@@ -67,6 +67,7 @@ def check_approve(project, scene):
     assert report["blocking_issues"] == []
     # Warnings are not relabeled pass; explicit acceptance is required.
     cli("approve_scene.py", "--project", project, "--scene", scene["scene_id"],
+        "--reviewer-type", "automation", "--reviewer-id", "pytest-synthetic-fixture",
         *(["--allow-warnings"] if report["status"] == "warning" else []))
     return report
 
@@ -273,7 +274,8 @@ def test_memory_cli_propose_validate_accept_prompt_then_edit_invalidates(tmp_pat
     source = project / manifest["scenes"][0]["path"]
     source.write_text(source.read_text(encoding="utf-8").replace("青銅の鍵", "木製の鍵"), encoding="utf-8")
     cli("build_draft_prompt.py", "--project", project, "--scene", target, "--runtime_dir", directory, ok=False)
-    cli("approve_scene.py", "--project", project, "--scene", "1-1", "--allow-warnings", ok=False)
+    cli("approve_scene.py", "--project", project, "--scene", "1-1", "--allow-warnings",
+        "--reviewer-type", "automation", "--reviewer-id", "pytest-synthetic-fixture", ok=False)
     directory = prepare(project, target, pov="character:a")
     assert manifest["facts"]["past_fact"] not in prompt(project, target, directory).read_text(encoding="utf-8")
 

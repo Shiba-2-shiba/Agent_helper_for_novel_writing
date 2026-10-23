@@ -47,8 +47,12 @@ python scripts/check_scene_output.py --project my_novel --text chapter_2_scene_3
 内容をレビューし、明示的に承認する場合だけ次を実行する。
 
 ```sh
-python scripts/approve_scene.py --project my_novel --scene 2-3
+python scripts/approve_scene.py --project my_novel --scene 2-3 --reviewer-type agent --reviewer-id codex
 ```
+
+`--reviewer-type` と `--reviewer-id` は必須。種別は `human`（人間）、`agent`（AIエージェント）、`automation`（合成fixture等の自動評価）。IDは実際の確認者を識別する値に置き換える。人間が本文を確認していない場合は `human` やユーザー本人のIDを指定しない。これらは申告された主体の記録であり、本人認証や文学的品質の証明ではない。`--revoke` は確認者の再指定を必要とせず、元の承認者情報を保持する。
+
+承認台帳には `reviewer_type` / `reviewer_id` と互換用の `approved_by`（明示IDと同じ値）を保存する。旧記録の `approved_by: user` 等から確認者を推定しない。読み込み時は `unknown` とし、元の値を `legacy_approved_by` に保持するが、読み込みだけではファイルを書き換えない。既存の本文hash・検査条件に基づく承認の有効性は別途検証する。旧Python APIで種別/IDを省略した場合も `unknown` となる。明示済みの種別/IDが欠損・不正・矛盾した台帳は破損として停止する。
 
 warningの採用は根拠を確認し `--allow-warnings` を明示する。本文または有効な検査条件が変われば、新形式の承認はstaleとなる。承認済みの古い本文へhashだけを付け替えて再利用しない。
 

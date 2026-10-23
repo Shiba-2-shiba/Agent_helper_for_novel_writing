@@ -29,6 +29,15 @@ def extract_keywords(text):
     return sorted(keyword for keyword in keywords if keyword)
 
 
+def _summary_sources(outcome, *, path, scene_id, text, content_hash):
+    if outcome:
+        return [dict(source) for source in outcome["sources"]]
+    # An excerpt can span several lines after whitespace compaction. Point to
+    # the whole scene rather than inventing a first-line-only evidence range.
+    return [{"path": path, "scene_id": scene_id, "content_hash": content_hash,
+             "line_start": 1, "line_end": max(1, len(text.splitlines()))}]
+
+
 def build_scene_summary_records(project_dir):
     records = []
     outcomes = _accepted_outcomes(project_dir)
@@ -38,19 +47,23 @@ def build_scene_summary_records(project_dir):
         scene_id = f"{item['chapter']}-{item['scene']}"
         outcome = outcomes.get(scene_id)
         summary = outcome["text"] if outcome else build_excerpt(text, max_chars=140)
+        relative_path = os.path.relpath(path, project_dir)
+        content_hash = file_content_hash(path)
         records.append(
             {
                 "scene_id": scene_id,
                 "chapter": item["chapter"],
                 "scene": item["scene"],
-                "path": os.path.relpath(path, project_dir),
+                "path": relative_path,
                 "summary": summary,
                 "summary_kind": "scene_outcome" if outcome else "excerpt",
                 "memory_record_id": outcome["id"] if outcome else "",
+                "sources": _summary_sources(outcome, path=relative_path, scene_id=scene_id,
+                                            text=text, content_hash=content_hash),
                 "characters": [],
                 "threads": [],
                 "keywords": extract_keywords(summary),
-                "content_hash": file_content_hash(path),
+                "content_hash": content_hash,
                 "updated_at": datetime.now(timezone.utc).isoformat(),
             }
         )
@@ -128,10 +141,14 @@ def select_related_scenes(project_dir, *, target_scene_id, query_text, limit=3):
         outcome = outcomes.get(record["scene_id"])
         # A globally active index entry may be unavailable at an earlier target.
         # Re-project accepted outcomes at T; otherwise label a fresh prose excerpt.
-        text = read_text_file(os.path.join(project_dir, record["path"]))
+        path = os.path.join(project_dir, record["path"])
+        text = read_text_file(path)
         record["summary"] = outcome["text"] if outcome else build_excerpt(text, max_chars=140)
         record["summary_kind"] = "scene_outcome" if outcome else "excerpt"
         record["memory_record_id"] = outcome["id"] if outcome else ""
+        record["content_hash"] = file_content_hash(path)
+        record["sources"] = _summary_sources(outcome, path=record["path"], scene_id=record["scene_id"],
+                                            text=text, content_hash=record["content_hash"])
         record["keywords"] = extract_keywords(record["summary"])
         candidates.append(record)
     scored = [(_score_record(record, target_keywords, target_scene_id), record) for record in candidates]
@@ -145,9 +162,11 @@ def render_related_context_pack(project_dir, *, target_scene_id, query_text, lim
     if not selected:
         lines.append("- No related scene summaries found.")
     for record in selected:
-        source = f"{record['path']}:1-1"
-        lines.append(f"- [scene {record['scene_id']} / {record['summary_kind']}] {record['summary']} (source: {source})")
+        sources = "; ".join(f"{source['path']}:{source['line_start']}-{source['line_end']}"
+                            for source in record["sources"])
+        lines.append(f"- [scene {record['scene_id']} / {record['summary_kind']}] {record['summary']} (source: {sources})")
     lines.extend(["", "## Pointers"])
     for record in selected:
-        lines.append(f"- scene:{record['path']}:1-1")
+        for source in record["sources"]:
+            lines.append(f"- scene:{source['path']}:{source['line_start']}-{source['line_end']}")
     return "\n".join(lines).rstrip() + "\n"

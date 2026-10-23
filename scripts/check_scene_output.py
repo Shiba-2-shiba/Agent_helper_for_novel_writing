@@ -222,6 +222,7 @@ def main():
                 "type": f"anti_ai_style:{warning['type']}",
                 "message": warning["message"],
                 "evidence": warning.get("evidence", ""),
+                **{key: warning[key] for key in ("start_line", "end_line") if key in warning},
             }
             for warning in anti_ai_assessment["warnings"]
         )

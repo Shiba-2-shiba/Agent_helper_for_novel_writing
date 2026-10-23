@@ -141,7 +141,9 @@ def evaluate(project_dir):
                 raise RuntimeError("real scene check did not permit approval: {}".format(checked.get("status")))
             report["check_status"] = checked["status"]
             report["check_warnings"] = checked.get("warnings", [])
-            approve_args = ["--project", work, "--scene", target_id]
+            approve_args = ["--project", work, "--scene", target_id,
+                            "--reviewer-type", "automation", "--reviewer-id", "eval_long_novel_runtime",
+                            "--notes", "Synthetic fixture evaluation; not human or semantic review."]
             if checked["status"] == "warning":
                 approve_args.append("--allow-warnings")
             run("approve_scene.py", approve_args)

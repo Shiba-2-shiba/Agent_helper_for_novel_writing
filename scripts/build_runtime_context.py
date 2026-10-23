@@ -181,15 +181,22 @@ def _resolve_scene_length_band(scene_plan, planning_meta):
             "min": scene_plan["min_chars"],
             "target": scene_plan["target_chars"],
             "max": scene_plan["max_chars"],
+            "source": "Scene Ledger",
         }
 
-    return resolve_scene_type_band(
+    band = resolve_scene_type_band(
         scene_plan["scene_type"] if scene_plan else "",
         state_schema_text=planning_meta["state_schema_text"],
         min_chars=DEFAULT_MIN_CHARS,
         target_chars=DEFAULT_TARGET_CHARS,
         max_chars=DEFAULT_MAX_CHARS,
     )
+    configured = planning_meta["scene_type_bands"].get(band["scene_type"], {})
+    band["source"] = (
+        "scene_type_bands" if scene_plan and all(configured.get(key) for key in ("min", "target", "max"))
+        else "unknown (legacy fallback; confirm the target scene's Length Band)"
+    )
+    return band
 
 
 def _count_planned_scenes_remaining(chapter_rows, scene_ref):
@@ -362,6 +369,7 @@ def build_request_compact(mode, priority, scene_ref, planning_meta, length_band)
         f"- Planning Gate Enabled: {str(planning_meta['planning_gate_enabled']).lower()}",
         f"- Planning Gate: {planning_meta['planning_gate_status'] or 'unknown'}",
         f"- Target Band: {length_band['min']} / {length_band['target']} / {length_band['max']}",
+        f"- Length Band Source: {length_band['source']}",
         f"Priority: {priority}",
     ]
     if planning_meta["length_mode"]:
@@ -602,7 +610,7 @@ def _build_runtime_context_locked(project_dir, args):
     outline_path = resolve_outline_path(project_dir)
     outline_text = read_text_file(outline_path) if os.path.exists(outline_path) else ""
 
-    chapter_block = ""
+    chapter_block = extract_chapter_block(outline_text, args.chapter)
     if args.mode == "draft":
         outline_path = resolve_outline_path(project_dir, require_exists=True)
         outline_text = read_text_file(outline_path)
@@ -611,8 +619,8 @@ def _build_runtime_context_locked(project_dir, args):
             raise UserFacingError(f"chapter {args.chapter} block not found in outline")
 
     planning_meta = load_planning_metadata(project_dir)
+    scene_plan = find_scene_ledger_entry(chapter_block, scene_ref["scene"], chapter_num=scene_ref["chapter"])
     if args.mode == "draft":
-        scene_plan = find_scene_ledger_entry(chapter_block, scene_ref["scene"], chapter_num=scene_ref["chapter"])
         if scene_plan and scene_plan["depends_on"] and scene_plan["depends_on"] != "-":
             dependency_ref = parse_scene_reference(scene_plan["depends_on"])
             dependency_path = find_scene_file(project_dir, dependency_ref)
@@ -620,15 +628,7 @@ def _build_runtime_context_locked(project_dir, args):
                 raise UserFacingError(
                     f"dependent scene not found: {scene_plan['depends_on']} must exist before drafting {scene_ref['canonical_id']}"
                 )
-        length_band = _resolve_scene_length_band(scene_plan, planning_meta)
-    else:
-        length_band = resolve_scene_type_band(
-            "",
-            state_schema_text=planning_meta["state_schema_text"],
-            min_chars=DEFAULT_MIN_CHARS,
-            target_chars=DEFAULT_TARGET_CHARS,
-            max_chars=DEFAULT_MAX_CHARS,
-        )
+    length_band = _resolve_scene_length_band(scene_plan, planning_meta)
 
     style_contract, warnings = build_style_contract(
         project_dir,
@@ -636,6 +636,7 @@ def _build_runtime_context_locked(project_dir, args):
         target_chars=length_band["target"],
         max_chars=length_band["max"],
     )
+    style_contract += f"\n  - Length Band Source: {length_band['source']}"
     previous_pack = find_previous_scene_pack(project_dir, scene_ref, previous_path)
     written_files = []
 

@@ -2,7 +2,7 @@ import argparse
 import os
 import sys
 
-from novel_agent.approvals import approve_scene, revoke_scene_approval
+from novel_agent.approvals import REVIEWER_TYPES, approve_scene, revoke_scene_approval
 from prompt_utils import UserFacingError, resolve_project_path
 
 
@@ -13,8 +13,12 @@ def main():
     parser.add_argument("--runtime_dir", default="", help="Optional runtime directory path")
     parser.add_argument("--allow-warnings", action="store_true", help="Allow approving warning check status")
     parser.add_argument("--revoke", action="store_true", help="Revoke an existing approval")
+    parser.add_argument("--reviewer-type", choices=REVIEWER_TYPES, help="Actual reviewer kind (required unless revoking)")
+    parser.add_argument("--reviewer-id", help="Actual reviewer identifier (required unless revoking)")
     parser.add_argument("--notes", default="", help="Optional approval/revocation notes")
     args = parser.parse_args()
+    if not args.revoke and (args.reviewer_type is None or not args.reviewer_id or not args.reviewer_id.strip()):
+        parser.error("approval requires --reviewer-type and a nonempty --reviewer-id")
 
     project_dir = resolve_project_path(args.project)
     if not os.path.isdir(project_dir):
@@ -30,6 +34,8 @@ def main():
         args.scene,
         allow_warnings=args.allow_warnings,
         runtime_dir_arg=args.runtime_dir,
+        reviewer_type=args.reviewer_type,
+        reviewer_id=args.reviewer_id,
         notes=args.notes,
     )
     print(f"OK: scene approved scene={args.scene} check_status={record['check_status']}")

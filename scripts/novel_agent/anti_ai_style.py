@@ -1,12 +1,27 @@
 import re
 
+from novel_agent.text_quality import split_paragraphs
+
+
+_SENTENCE_END = re.compile(
+    r"[。!?！？]+[」』”’）)]*|[」』”’][^\S\r\n]*(?=\r?\n)|\r?\n[^\S\r\n]*\r?\n"
+)
+
+
+def _sentence_spans(text):
+    """Yield sentences with source offsets, keeping punctuation and close quotes."""
+    text = text or ""
+    start = 0
+    for end in [match.end() for match in _SENTENCE_END.finditer(text)] + [len(text)]:
+        fragment = text[start:end]
+        sentence = fragment.strip()
+        if sentence:
+            yield sentence, start + len(fragment) - len(fragment.lstrip()), start + len(fragment.rstrip())
+        start = end
+
 
 def split_sentences(text):
-    return [part.strip() for part in re.split(r"(?<=。)|[!?！？]", text or "") if part.strip()]
-
-
-def split_paragraphs(text):
-    return [block.strip() for block in re.split(r"\n\s*\n", text.strip()) if block.strip()]
+    return [sentence for sentence, _, _ in _sentence_spans(text)]
 
 
 def _short_evidence(text, limit=80):
@@ -29,13 +44,15 @@ def detect_over_explain(sentences):
 
 
 def detect_triadic_listing(text):
-    for sentence in split_sentences(text):
+    for sentence, start, end in _sentence_spans(text):
         comma_count = sentence.count("、")
         if comma_count >= 4 and re.search(r"(?:と|や).*(?:と|や)", sentence):
             return {
                 "type": "triadic_listing_pattern",
                 "message": "list-like prose rhythm detected inside a sentence",
                 "evidence": _short_evidence(sentence),
+                "start_line": text.count("\n", 0, start) + 1,
+                "end_line": text.count("\n", 0, end) + 1,
             }
     return None
 
@@ -48,7 +65,9 @@ def detect_uniform_paragraph_length(paragraphs):
     if average <= 0:
         return None
     close = [length for length in lengths if abs(length - average) / average <= 0.12]
-    if len(close) >= 5:
+    # A few near-average lines are normal in a long scene. Require the pattern
+    # to describe most paragraphs, not merely a fixed-size subset of them.
+    if len(close) >= 5 and len(close) / len(lengths) >= 0.8:
         return {
             "type": "uniform_paragraph_length",
             "message": "paragraph lengths are unusually uniform",
@@ -60,7 +79,7 @@ def detect_uniform_paragraph_length(paragraphs):
 def detect_repeated_sentence_ending(sentences):
     endings = []
     for sentence in sentences:
-        cleaned = sentence.rstrip("。 　")
+        cleaned = sentence.rstrip("。!?！？」』”’）) 　")
         if len(cleaned) >= 2:
             endings.append(cleaned[-2:])
     if len(endings) < 5:

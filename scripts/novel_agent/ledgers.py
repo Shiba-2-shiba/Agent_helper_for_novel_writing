@@ -67,10 +67,16 @@ def read_artifact_ledger(project_dir):
 
 
 def _validate_artifact_records(records, path):
+    seen = set()
     for record in records:
         if not isinstance(record, dict) or not isinstance(record.get("depends_on", []), list) or any(not isinstance(item, dict) for item in record.get("depends_on", [])):
             from novel_agent.errors import DataCorruptionError
             raise DataCorruptionError("invalid artifact record at {}".format(path))
+        relative = record.get("path")
+        if not isinstance(relative, str) or relative in seen:
+            from novel_agent.errors import DataCorruptionError
+            raise DataCorruptionError("invalid or duplicate artifact path at {}: {}".format(path, relative))
+        seen.add(relative)
     from novel_agent.errors import DataCorruptionError
     from novel_agent.dependencies import dependency_digest
     for record in records:
@@ -459,11 +465,13 @@ def register_artifacts(project_dir, items):
         return _register_artifacts_locked(project_dir, items)
 
 
-def _refresh_artifact_statuses_locked(project_dir):
+def _refresh_artifact_statuses_locked(project_dir, selected_paths=None):
     from novel_agent.dependencies import verify_dependencies
     payload = read_artifact_ledger(project_dir)
     changed = False
     for artifact in payload["artifacts"]:
+        if selected_paths is not None and artifact.get("path") not in selected_paths:
+            continue
         if artifact.get("status") in {"protected", "superseded", "rejected"}:
             continue
         stale = bool(verify_dependencies(project_dir, artifact["dependencies"])) if "dependencies" in artifact else False
@@ -487,13 +495,17 @@ def refresh_artifact_statuses(project_dir):
         return _refresh_artifact_statuses_locked(project_dir)
 
 
+def find_artifacts_by_paths(project_dir, paths):
+    """Refresh only requested artifacts in one locked, validated ledger read."""
+    relative = [_rel(path, project_dir) for path in paths]
+    with project_lock(project_dir):
+        payload = _refresh_artifact_statuses_locked(project_dir, set(relative))
+    index = {item.get("path"): item for item in payload.get("artifacts", [])}
+    return [index.get(path) for path in relative]
+
+
 def find_artifact_by_path(project_dir, path):
-    rel_path = _rel(path, project_dir)
-    payload = refresh_artifact_statuses(project_dir)
-    for artifact in payload.get("artifacts", []):
-        if artifact.get("path") == rel_path:
-            return artifact
-    return None
+    return find_artifacts_by_paths(project_dir, [path])[0]
 
 
 def append_token_ledger(project_dir, record):

@@ -137,12 +137,13 @@ python scripts/run_scene_pipeline.py prepare --project my_novel --chapter 2 --sc
 python scripts/run_scene_pipeline.py prompt --project my_novel
 python scripts/run_scene_pipeline.py check --project my_novel --text chapter_2_scene_3.txt
 python scripts/run_scene_pipeline.py repair --project my_novel --text chapter_2_scene_3.txt
-python scripts/run_scene_pipeline.py approve --project my_novel --scene 2-3
+python scripts/run_scene_pipeline.py approve --project my_novel --scene 2-3 --reviewer-type agent --reviewer-id codex
 python scripts/run_scene_pipeline.py export --project my_novel
 python scripts/run_scene_pipeline.py health --project my_novel --fix-safe
 ```
 
 - `approve_scene.py` は `check_report.json` が `fail` のシーンを承認しません
+- 承認CLIは `--reviewer-type human|agent|automation` と `--reviewer-id` が必須です。実際に確認した主体を記録し、AIのレビューを人間の承認と表しません。旧記録の曖昧な承認者は `unknown` と扱います。
 - `warning` のシーンは `--allow-warnings` がある場合だけ承認できます
 - 承認時は本文 hash を `runtime/approval_ledger.json` に保存し、本文変更後の stale approval を export 前に検出します
 - `export_manuscript.py` は承認済み scene txt だけを `exports/manuscript.md` に結合します

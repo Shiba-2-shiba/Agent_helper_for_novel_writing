@@ -1,4 +1,5 @@
 from novel_agent.storage import read_json, validate_schema, project_lock
+from novel_agent.errors import DataCorruptionError
 import json
 import os
 
@@ -15,6 +16,26 @@ from prompt_utils import (
 )
 
 
+REVIEWER_TYPES = ("human", "agent", "automation")
+
+
+def _reviewer_attribution(reviewer_type=None, reviewer_id=None, approved_by=None):
+    # The old approved_by field defaulted to "user", even for AI callers.
+    # Preserve it as historical evidence, never infer a human reviewer from it.
+    if reviewer_type is None and reviewer_id is None:
+        attribution = {"reviewer_type": "unknown", "reviewer_id": "unknown", "approved_by": "unknown"}
+    else:
+        if reviewer_type not in REVIEWER_TYPES:
+            raise UserFacingError("reviewer type must be human, agent, or automation")
+        if not isinstance(reviewer_id, str) or not reviewer_id.strip():
+            raise UserFacingError("reviewer ID must be a nonempty string")
+        attribution = {"reviewer_type": reviewer_type, "reviewer_id": reviewer_id.strip(),
+                       "approved_by": reviewer_id.strip()}
+    if approved_by is not None:
+        attribution["legacy_approved_by"] = approved_by
+    return attribution
+
+
 def approval_ledger_path(project_dir):
     return os.path.join(runtime_root_dir(project_dir), "approval_ledger.json")
 
@@ -28,8 +49,17 @@ def read_approval_ledger(project_dir):
     payload.setdefault("scenes", {})
     for scene_id, record in payload["scenes"].items():
         if not isinstance(record, dict):
-            from novel_agent.errors import DataCorruptionError
             raise DataCorruptionError("invalid approval record at {}: {}".format(path, scene_id))
+        if "reviewer_type" not in record and "reviewer_id" not in record:
+            # Read compatibility only: do not rewrite old ledgers or approval hashes.
+            record.update(_reviewer_attribution(approved_by=record.get("approved_by")))
+        else:
+            kind, identity = record.get("reviewer_type"), record.get("reviewer_id")
+            if (kind not in REVIEWER_TYPES + ("unknown",)
+                    or not isinstance(identity, str) or not identity.strip()
+                    or (kind == "unknown" and identity != "unknown")
+                    or record.get("approved_by", identity) != identity):
+                raise DataCorruptionError("invalid reviewer attribution at {}: {}".format(path, scene_id))
     return payload
 
 
@@ -130,7 +160,9 @@ def _sync_status_locked(project_dir):
     _sync_status_projections_locked(project_dir, collect_project_status(project_dir))
 
 
-def approve_scene(project_dir, scene_raw, *, allow_warnings=False, runtime_dir_arg="", approved_by="user", notes=""):
+def approve_scene(project_dir, scene_raw, *, allow_warnings=False, runtime_dir_arg="", approved_by=None,
+                  reviewer_type=None, reviewer_id=None, notes=""):
+    attribution = _reviewer_attribution(reviewer_type, reviewer_id, approved_by)
     with project_lock(project_dir):
         scene_ref = parse_scene_reference(scene_raw)
         scene_path = find_scene_file(project_dir, scene_ref)
@@ -149,7 +181,7 @@ def approve_scene(project_dir, scene_raw, *, allow_warnings=False, runtime_dir_a
         payload = read_approval_ledger(project_dir)
         scene_id = scene_ref["canonical_id"]
         record = {key: report[key] for key in ("version", "scene_id", "source_path", "source_hash", "hash_algorithm", "check_inputs", "check_inputs_digest")}
-        record.update(status="approved", approved_at=utc_now(), approved_by=approved_by,
+        record.update(status="approved", approved_at=utc_now(), **attribution,
                       scene_path=_relative(scene_path, project_dir), check_report_path=_relative(report_path, project_dir),
                       check_status=status, content_hash=report["source_hash"], notes=notes)
         payload["scenes"][scene_id] = record

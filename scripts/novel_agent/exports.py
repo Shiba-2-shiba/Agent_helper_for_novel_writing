@@ -43,12 +43,14 @@ def _fallback_scene_order(project_dir):
     return [f"{item['chapter']}-{item['scene']}" for item in collect_scene_metadata(project_dir)]
 
 
-def export_manuscript(project_dir, *, include_warnings=False, output_path=""):
+def export_manuscript(project_dir, *, include_warnings=False, output_path="", title=None):
+    if title is not None and (not title.strip() or len(title.splitlines()) != 1):
+        raise UserFacingError("title must be a non-empty single line")
     with project_lock(project_dir):
-        return _export_manuscript_locked(project_dir, include_warnings=include_warnings, output_path=output_path)
+        return _export_manuscript_locked(project_dir, include_warnings=include_warnings, output_path=output_path, title=title)
 
 
-def _export_manuscript_locked(project_dir, *, include_warnings=False, output_path=""):
+def _export_manuscript_locked(project_dir, *, include_warnings=False, output_path="", title=None):
     approved = _approved_records(project_dir)
     stale = [
         scene_id
@@ -71,7 +73,8 @@ def _export_manuscript_locked(project_dir, *, include_warnings=False, output_pat
     if not selected:
         raise UserFacingError("no approved scenes available for export")
 
-    lines = [f"# {os.path.basename(os.path.normpath(project_dir))}", ""]
+    title = title.strip() if title is not None else os.path.basename(os.path.normpath(project_dir))
+    lines = [f"# {title}", ""]
     current_chapter = None
     for scene_id, record in selected:
         chapter = scene_id.split("-", 1)[0]
@@ -79,11 +82,14 @@ def _export_manuscript_locked(project_dir, *, include_warnings=False, output_pat
             current_chapter = chapter
             lines.extend([f"## 第{chapter}章", ""])
         scene_path = os.path.join(project_dir, record.get("scene_path", ""))
-        lines.append(read_text_file(scene_path).strip())
+        # Preserve the approved source verbatim, including indentation, boundary
+        # whitespace, and line endings. Separators belong to the export only.
+        with open(scene_path, "r", encoding="utf-8", newline="") as handle:
+            lines.append(handle.read())
         lines.append("")
 
     output_path = output_path or os.path.join(project_dir, "exports", "manuscript.md")
     ensure_directory(os.path.dirname(output_path))
-    write_text_file(output_path, "\n".join(lines).rstrip() + "\n")
+    write_text_file(output_path, "\n".join(lines) + "\n")
     return {"output_path": output_path, "scene_count": len(selected), "scenes": [scene_id for scene_id, _ in selected]}
 

@@ -2113,7 +2113,7 @@ class TestScenePipelineRefactor:
         self._write_runtime_check(project_dir, "2-2", "fail")
 
         result = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-2"],
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-2", "--reviewer-type", "automation", "--reviewer-id", "pytest"],
             capture_output=True,
             text=True,
         )
@@ -2122,7 +2122,7 @@ class TestScenePipelineRefactor:
 
         self._write_runtime_check(project_dir, "2-2", "warning")
         result = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-2"],
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-2", "--reviewer-type", "automation", "--reviewer-id", "pytest"],
             capture_output=True,
             text=True,
         )
@@ -2134,7 +2134,7 @@ class TestScenePipelineRefactor:
         self._write_runtime_check(project_dir, "2-1", "pass")
 
         approve = subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-1"],
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-1", "--reviewer-type", "automation", "--reviewer-id", "pytest"],
             capture_output=True,
             text=True,
         )
@@ -2155,7 +2155,7 @@ class TestScenePipelineRefactor:
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
         self._write_runtime_check(project_dir, "2-1", "pass")
         subprocess.run(
-            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-1"],
+            [sys.executable, os.path.join(SCRIPTS_DIR, "approve_scene.py"), "--project", project_dir, "--scene", "2-1", "--reviewer-type", "automation", "--reviewer-id", "pytest"],
             check=True,
             capture_output=True,
             text=True,

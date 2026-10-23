@@ -160,7 +160,7 @@
 ## ルーティング時の共通注意
 
 - `body.md` は通常の本文追記先ではない
-- 1 シーンの文字数契約は原則 `1000-1500`
+- 1 シーンの文字数契約は対象Scene LedgerのLength Bandを優先する。`1000-1500` は契約不明時の旧互換fallbackのみで、対象sceneの確定契約とは扱わない
 - `Mode` / `current_mode` は、このファイルの「正式モード名（正本）」に揃える
 - `Target Total Chars` を最初に決める
 - `Target Length Profile` は補助ラベルであり、本文長の正本は `Length Band`

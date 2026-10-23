@@ -38,8 +38,17 @@ def detect_unclosed_dialogue(text):
     }
 
 
+def split_paragraphs(text):
+    """Count hard line breaks as Japanese prose paragraphs, ignoring empty lines.
+
+    Ideographic indentation is optional. Soft wrapping in an editor is not a
+    line break in the source and therefore does not affect paragraph boundaries.
+    """
+    return [line.strip() for line in (text or "").splitlines() if line.strip()]
+
+
 def detect_duplicate_paragraphs(text):
-    paragraphs = [block.strip() for block in re.split(r"\n\s*\n", text.strip()) if block.strip()]
+    paragraphs = split_paragraphs(text)
     seen = {}
     duplicates = []
 
@@ -118,8 +127,7 @@ def detect_format_violations(text):
 
 
 def paragraph_count(text):
-    blocks = [block for block in re.split(r"\n\s*\n", text.strip()) if block.strip()]
-    return len(blocks)
+    return len(split_paragraphs(text))
 
 
 def dialogue_ratio_hint(text):
@@ -145,7 +153,7 @@ def classify_quality(*, actual_chars, min_chars, max_chars, format_details, forb
     blocking_issues = []
     warnings = []
     info = [
-        {"type": "paragraph_count", "value": paragraph_count_value},
+        {"type": "paragraph_count", "value": paragraph_count_value, "definition": "nonempty_source_lines"},
         {"type": "dialogue_ratio_hint", "value": dialogue_ratio},
     ]
 

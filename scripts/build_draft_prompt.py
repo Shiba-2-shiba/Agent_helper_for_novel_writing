@@ -3,7 +3,7 @@ import os
 import re
 import sys
 
-from novel_agent.ledgers import append_token_ledger, find_artifact_by_path
+from novel_agent.ledgers import append_token_ledger, find_artifacts_by_paths
 from novel_agent.trace import append_trace_event
 from novel_agent.memory_context import assemble_prompt, memory_prompt_sections
 from novel_agent.storage import read_json, atomic_write_json
@@ -111,8 +111,7 @@ def main():
     continuity_pack = read_text_file(continuity_path).strip()
     request_compact = read_text_file(request_path).strip()
     planning_gate_brief = read_optional_text(os.path.join(runtime_dir, "planning_gate_brief.md")).strip()
-    for required_path in (style_path, brief_path, continuity_path, request_path):
-        artifact = find_artifact_by_path(project_dir, required_path)
+    for artifact in find_artifacts_by_paths(project_dir, (style_path, brief_path, continuity_path, request_path)):
         if artifact and artifact.get("status") == "stale":
             print(f"WARN: stale runtime artifact detected: {artifact.get('path')}")
     scene_brief_meta = parse_scene_brief_metadata(scene_brief)

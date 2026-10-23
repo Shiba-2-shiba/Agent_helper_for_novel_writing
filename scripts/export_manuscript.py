@@ -12,13 +12,14 @@ def main():
     parser.add_argument("--format", default="markdown", choices=["markdown"], help="Export format")
     parser.add_argument("--include-warnings", action="store_true", help="Include scenes approved with warning status")
     parser.add_argument("--output", default="", help="Optional output path")
+    parser.add_argument("--title", default=None, help="Manuscript title (defaults to the project directory name)")
     args = parser.parse_args()
 
     project_dir = resolve_project_path(args.project)
     if not os.path.isdir(project_dir):
         raise UserFacingError(f"project directory not found: {project_dir}")
 
-    result = export_manuscript(project_dir, include_warnings=args.include_warnings, output_path=args.output)
+    result = export_manuscript(project_dir, include_warnings=args.include_warnings, output_path=args.output, title=args.title)
     print(f"OK: manuscript exported scenes={result['scene_count']}")
     print(f"OK: output={result['output_path']}")
 

@@ -48,3 +48,9 @@ def test_bootstrap_lists_all_supported_profiles():
     text=(ROOT/'agent/skills/project-bootstrap/SKILL.md').read_text(encoding='utf-8')
     for profile in TARGET_PROFILE_SPECS.values():
         assert profile['target_length_profile'] in text
+
+
+def test_hub_prioritizes_scene_length_contract():
+    text = (ROOT / 'agent/HUB.md').read_text(encoding='utf-8')
+    assert '対象Scene LedgerのLength Bandを優先' in text
+    assert '1 シーンの文字数契約は原則 `1000-1500`' not in text

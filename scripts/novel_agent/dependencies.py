@@ -331,16 +331,47 @@ def _projection(project_dir, selector, scene_id, path=None):
             "sources": sources, "source_paths": [source["path"] for source in sources]}
 
 
-def _artifact_dependencies(project_dir, relative, absolute):
-    ledger_path = os.path.join(project_dir, "runtime", "artifact_ledger.json")
-    ledger = read_json(ledger_path, default_factory=lambda: {"artifacts": []})
-    artifacts = ledger.get("artifacts", [])
-    if not isinstance(artifacts, list) or any(not isinstance(item, dict) for item in artifacts):
-        raise DataCorruptionError("invalid artifacts at {}".format(ledger_path))
-    matching = [item for item in artifacts if item.get("path") == relative]
-    if len(matching) > 1:
-        raise DataCorruptionError("duplicate artifact path at {}: {}".format(ledger_path, relative))
-    payload = matching[0] if matching else None
+class _Operation:
+    """Read-only caches scoped to one snapshot/verification, never publication.
+
+    Each public verify call starts afresh, including the final pre-write check.
+    Expected records are never cached by path: distinct historical guards must
+    each compare against current evidence. Only current observations are shared.
+    """
+    def __init__(self):
+        self.artifacts = None
+        self.snapshots = {}
+        self.digests = {}
+
+    def artifact_index(self, project_dir):
+        if self.artifacts is None:
+            ledger_path = os.path.join(project_dir, "runtime", "artifact_ledger.json")
+            ledger = read_json(ledger_path, default_factory=lambda: {"artifacts": []})
+            if not isinstance(ledger, dict):
+                raise DataCorruptionError("invalid artifact ledger at {}".format(ledger_path))
+            artifacts = ledger.get("artifacts", [])
+            if not isinstance(artifacts, list) or any(not isinstance(item, dict) for item in artifacts):
+                raise DataCorruptionError("invalid artifacts at {}".format(ledger_path))
+            index = {}
+            for item in artifacts:
+                path = item.get("path")
+                if not isinstance(path, str):
+                    raise DataCorruptionError("invalid artifact path at {}".format(ledger_path))
+                if path in index:
+                    raise DataCorruptionError("duplicate artifact path at {}: {}".format(ledger_path, path))
+                index[path] = item
+            self.artifacts = index
+        return self.artifacts
+
+    def digest(self, inputs):
+        key = id(inputs)
+        if key not in self.digests:
+            self.digests[key] = dependency_digest(inputs)
+        return self.digests[key]
+
+
+def _artifact_dependencies(project_dir, relative, absolute, operation):
+    payload = operation.artifact_index(project_dir).get(relative)
     if payload is None and relative.endswith(".json") and os.path.isfile(absolute):
         payload = read_json(absolute, default_factory=dict)
     if payload is None:
@@ -350,11 +381,12 @@ def _artifact_dependencies(project_dir, relative, absolute):
     if inputs is not None and not isinstance(inputs, list):
         raise DataCorruptionError("invalid artifact dependencies: {}".format(relative))
     if inputs is not None and digest is None:
-        digest = dependency_digest(inputs)
+        digest = operation.digest(inputs)
     return inputs, digest
 
 
-def _snapshot_one(project_dir, spec):
+def _snapshot_one(project_dir, spec, operation=None):
+    operation = operation or _Operation()
     if not isinstance(spec, dict):
         raise UserFacingError("dependency spec must be an object")
     kind = spec.get("kind", spec.get("type"))
@@ -362,13 +394,18 @@ def _snapshot_one(project_dir, spec):
         raise UserFacingError("unknown dependency kind: {}".format(kind))
     default_path = "." if kind in {"scene_set", "projection"} else ""
     absolute, relative = _path(project_dir, spec.get("path", default_path))
+    # Include every selector/scope field, but not historical snapshot values.
+    cache_key = _canonical_json([kind, relative, spec.get("scope", "prior"),
+                           spec.get("selector"), spec.get("scene_id"), spec.get("target_scene_id")])
+    if cache_key in operation.snapshots:
+        return operation.snapshots[cache_key]
     result = {"kind": kind, "path": relative}
     if kind in {"file", "artifact"}:
         if os.path.exists(absolute) and not os.path.isfile(absolute):
             raise UserFacingError("dependency is not a file: {}".format(relative))
         result.update({"exists": os.path.isfile(absolute), "content_hash": text_content_hash(absolute), "hash_algorithm": _HASH_ALGORITHM})
     if kind == "artifact":
-        inputs, digest = _artifact_dependencies(project_dir, relative, absolute)
+        inputs, digest = _artifact_dependencies(project_dir, relative, absolute, operation)
         result.update({"dependency_digest": digest, "dependencies": inputs})
     elif kind == "scene_set":
         scope = spec.get("scope", "prior")
@@ -391,6 +428,7 @@ def _snapshot_one(project_dir, spec):
             result["scene_id"] = _scene_id(_scene_key(scene_id))
         value = _projection(project_dir, selector, scene_id, path=relative)
         result.update({"value": value, "source_paths": value["source_paths"], "projection_hash": _digest(value)})
+    operation.snapshots[cache_key] = result
     return result
 
 
@@ -398,10 +436,15 @@ def snapshot_dependencies(project_dir, specs):
     """Capture explicit source specs, including absent optional sources."""
     if not isinstance(specs, list):
         raise UserFacingError("dependency specs must be a list")
-    return sorted((_snapshot_one(project_dir, spec) for spec in specs), key=_canonical_json)
+    operation = _Operation()
+    unique = {}
+    for spec in specs:
+        record = _snapshot_one(project_dir, spec, operation)
+        unique[_canonical_json(record)] = record
+    return [unique[key] for key in sorted(unique)]
 
 
-def _verify(project_dir, records, ancestors):
+def _verify(project_dir, records, ancestors, operation):
     if not isinstance(records, list):
         return [{"path": "", "reason": "invalid_dependency_records"}]
     changes = []
@@ -413,7 +456,7 @@ def _verify(project_dir, records, ancestors):
         kind = record.get("kind", record.get("type"))
         identity = {"kind": kind, "path": path}
         try:
-            current = _snapshot_one(project_dir, record)
+            current = _snapshot_one(project_dir, record, operation)
         except UserFacingError as exc:
             changes.append(dict(identity, reason="dependency_unavailable", detail=str(exc)))
             continue
@@ -426,14 +469,14 @@ def _verify(project_dir, records, ancestors):
             inputs = current.get("dependencies")
             if inputs is None or current.get("dependency_digest") is None:
                 changes.append(dict(identity, reason="unverified_artifact_dependencies"))
-            elif current["dependency_digest"] != dependency_digest(inputs):
+            elif current["dependency_digest"] != operation.digest(inputs):
                 changes.append(dict(identity, reason="invalid_artifact_dependency_digest"))
             else:
-                for issue in _verify(project_dir, inputs, ancestors | {path}):
+                for issue in _verify(project_dir, inputs, ancestors | {path}, operation):
                     changes.append(dict(identity, reason="artifact_dependency_changed", dependency=issue))
     return changes
 
 
 def verify_dependencies(project_dir, records):
     """Return explicit stale/corrupt/unverified reasons; never hide bad evidence."""
-    return _verify(project_dir, records, set())
+    return _verify(project_dir, records, set(), _Operation())
