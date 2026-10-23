@@ -152,6 +152,12 @@ def main():
         else text_path
     )
 
+    from novel_agent.storage import project_lock
+    with project_lock(project_dir):
+        _apply_locked(project_dir, text_path, edits_path, output_path)
+
+
+def _apply_locked(project_dir, text_path, edits_path, output_path):
     source_text = read_text_file(text_path)
     edit_text = read_text_file(edits_path)
     edits = parse_edit_blocks(edit_text)
@@ -159,13 +165,17 @@ def main():
 
     write_text_file(output_path, updated_text)
     scene_ref = infer_scene_ref_from_path(text_path)
-    record_quality_budget_action(
+    from novel_agent.ledgers import _record_quality_budget_action_locked
+    _record_quality_budget_action_locked(
         project_dir,
         scene_ref,
         "expand_edits_applied",
         f"applied {len(edits)} edit blocks",
         artifacts=[output_path],
     )
+    if scene_ref:
+        from novel_agent.scene_status import collect_project_status, _sync_status_projections_locked
+        _sync_status_projections_locked(project_dir, collect_project_status(project_dir))
     print(f"OK: applied {len(edits)} edit blocks")
     print(f"OK: output={output_path}")
 

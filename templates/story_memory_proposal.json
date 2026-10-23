@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "batch_id": "replace-with-unique-batch-id",
+  "records": [
+    {
+      "id": "fact:replace-with-unique-id",
+      "kind": "fact",
+      "text": "Replace with an explicitly reviewed fact from approved scene prose.",
+      "entity_ids": ["character:example"],
+      "available_after_scene": "1-1",
+      "sources": [
+        {
+          "path": "chapter_1/scene_1-1.txt",
+          "content_hash": "replace-with-current-sha256-utf8-text-hash",
+          "line_start": 1,
+          "line_end": 1
+        }
+      ],
+      "supersedes": [],
+      "subject_id": "character:example",
+      "predicate": "replace-with-explicit-relation"
+    }
+  ]
+}

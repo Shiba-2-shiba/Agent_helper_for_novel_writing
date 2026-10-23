@@ -5,6 +5,8 @@ import sys
 
 from novel_agent.ledgers import append_token_ledger, find_artifact_by_path
 from novel_agent.trace import append_trace_event
+from novel_agent.memory_context import assemble_prompt, memory_prompt_sections
+from novel_agent.storage import read_json, atomic_write_json
 from prompt_utils import (
     DEFAULT_MAX_CHARS,
     DEFAULT_MIN_CHARS,
@@ -17,6 +19,7 @@ from prompt_utils import (
     read_text_file,
     resolve_project_path,
     resolve_runtime_dir,
+    parse_scene_reference,
     validate_char_bounds,
     write_text_file,
 )
@@ -75,6 +78,7 @@ def _parse_bool_text(raw_value):
 def main():
     parser = argparse.ArgumentParser(description="Build a draft-only prompt from compact runtime files.")
     parser.add_argument("--project", required=True, help="Path to the project directory")
+    parser.add_argument("--scene", default="", help="Explicit scene ID")
     parser.add_argument("--runtime_dir", default="", help="Optional runtime directory path")
     parser.add_argument("--min_chars", type=int, default=DEFAULT_MIN_CHARS, help="Minimum target characters")
     parser.add_argument("--target_chars", type=int, default=DEFAULT_TARGET_CHARS, help="Preferred target characters")
@@ -86,13 +90,22 @@ def main():
     if not os.path.isdir(project_dir):
         raise UserFacingError(f"project directory not found: {project_dir}")
 
-    runtime_dir = resolve_runtime_dir(project_dir, mode="draft", runtime_dir_arg=args.runtime_dir)
+    runtime_dir = resolve_runtime_dir(project_dir, mode="draft", scene_ref=parse_scene_reference(args.scene) if args.scene else None, runtime_dir_arg=args.runtime_dir)
+    from novel_agent.runtime_paths import require_runtime_current
+    require_runtime_current(project_dir, runtime_dir)
 
     style_path = require_existing_file(os.path.join(runtime_dir, "style_contract_compact.md"), "runtime/style_contract_compact.md")
     brief_path = require_existing_file(os.path.join(runtime_dir, "scene_brief_compact.md"), "runtime/scene_brief_compact.md")
     continuity_path = require_existing_file(os.path.join(runtime_dir, "continuity_pack.md"), "runtime/continuity_pack.md")
     request_path = require_existing_file(os.path.join(runtime_dir, "request_compact.md"), "runtime/request_compact.md")
 
+    from novel_agent.dependencies import snapshot_dependencies, verify_dependencies
+    prompt_inputs = snapshot_dependencies(project_dir, [
+        {"kind": "artifact", "path": path} for path in
+        (style_path, brief_path, continuity_path, request_path, os.path.join(runtime_dir, "planning_gate_brief.md"),
+         os.path.join(runtime_dir, "story_memory_pack.md"), os.path.join(runtime_dir, "related_context_pack.md"))
+    ] + ([{"kind": "projection", "selector": "memory_selection", "path": os.path.join(runtime_dir, "context_selection.json")}]
+         if os.path.isfile(os.path.join(runtime_dir, "context_selection.json")) else []))
     style_contract = read_text_file(style_path).strip()
     scene_brief = read_text_file(brief_path).strip()
     continuity_pack = read_text_file(continuity_path).strip()
@@ -130,10 +143,8 @@ def main():
             "圧縮済みのランタイム文脈だけを使い、最初の骨格を安定して作ってください。",
             "## Style Contract",
             style_contract,
-            "## Scene Brief",
+            "## Scene Brief (planning)",
             scene_brief,
-            "## Continuity Pack",
-            continuity_pack,
             "## Request Compact",
             request_compact,
             *(
@@ -152,6 +163,30 @@ def main():
             "- 本文のみ出力",
         ]
     )
+    selection_path = os.path.join(runtime_dir, "context_selection.json")
+    context_selection = read_json(selection_path, default_factory=dict)
+    related_context = read_optional_text(os.path.join(runtime_dir, "related_context_pack.md")).strip()
+    memory_pack = read_optional_text(os.path.join(runtime_dir, "story_memory_pack.md")).strip()
+    prompt, output_contract = prompt.split("\n\n## Output Contract\n\n", 1)
+    sections = [{"name": "required_constraints_and_planning", "text": prompt, "required": True,
+                 "priority": 0, "source_ids": []},
+                {"name": "output_contract", "text": "## Output Contract\n" + output_contract, "required": True,
+                 "priority": 100, "source_ids": []}]
+    if context_selection.get("memory"):
+        sections.extend(memory_prompt_sections(context_selection["memory"]))
+    elif memory_pack:
+        sections.append({"name": "story_memory", "text": memory_pack, "required": False,
+                         "priority": 2, "source_ids": []})
+    sections.extend([
+        {"name": "continuity", "text": "## Continuity Pack\n" + continuity_pack, "required": False,
+         "priority": 8, "source_ids": ["continuity_pack.md"]},
+        {"name": "related_context", "text": related_context, "required": False,
+         "priority": 9, "source_ids": ["related_context_pack.md"]},
+    ])
+    assembled = assemble_prompt(sections)
+    prompt = assembled["prompt"]
+    context_selection["final_prompt"] = {key: value for key, value in assembled.items() if key != "prompt"}
+    atomic_write_json(selection_path, context_selection)
     estimated_tokens = estimate_tokens(prompt)
     part_estimates = {
         "style_contract": estimate_tokens(style_contract),
@@ -162,7 +197,12 @@ def main():
     }
 
     output_path = os.path.join(runtime_dir, "draft_prompt.txt")
-    write_text_file(output_path, prompt + "\n")
+    if verify_dependencies(project_dir, prompt_inputs) and os.path.isfile(os.path.join(runtime_dir, "runtime_manifest.json")):
+        raise UserFacingError("runtime changed during prompt generation; prepare again")
+    write_text_file(output_path, prompt)
+    from novel_agent.dependencies import snapshot_dependencies
+    from novel_agent.ledgers import register_artifact
+    register_artifact(project_dir, artifact_id="draft_prompt", artifact_type="draft_prompt", path=output_path, dependencies=prompt_inputs)
     append_token_ledger(
         project_dir,
         {

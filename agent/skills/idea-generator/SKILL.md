@@ -15,7 +15,7 @@ description: Brainstorm new novel concepts, widen rough ideas, and shape them in
 # Required Inputs
 
 - ユーザーの初期アイディア、キーワード、ジャンル希望
-- 必須: `Target Total Chars` (`30000 / 50000 / 100000`)
+- 必須: `Target Total Chars` (`30000 / 50000 / 100000 / 200000`)
 
 # Procedure
 
@@ -59,3 +59,7 @@ description: Brainstorm new novel concepts, widen rough ideas, and shape them in
 - ユーザーの突飛な案を即否定しない
 - この段階で設定テンプレートの詳細記入まで進めない
 
+
+# Shared Long-Novel Contract
+
+開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。

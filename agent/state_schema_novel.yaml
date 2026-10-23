@@ -23,14 +23,14 @@ profile:
   pov_default: "" # 例: "三人称（主人公寄り）"
 
 targets:
-  target_total_chars: 100000
+  target_total_chars: 100000 # supported: 30000 / 50000 / 100000 / 200000
   target_length_profile: "novel_100k"
   target_confirmed: false
   target_confirmation_source: "" # one of: initial / late_update / migration
   target_confirmed_at: "" # ISO 8601 timestamp
   target_confirmed_by: "" # one of: user / migration / system
   planning_gate_enabled: true
-  planning_gate_min_chars: 80000
+  planning_gate_min_chars: 80000 # profile gate: 80% of target (200000 -> 160000)
   planning_target_total_chars: 100000
   total_chars: 100000
   chapter_chars: {} # 例: {"1": 18000, "2": 20000, "3": 20000, "4": 26000, "5": 16000}
@@ -104,6 +104,9 @@ progress:
   planned_total_min_chars: 0
   planned_total_target_chars: 0
   planned_scene_count: 0
+  written_scene_count: 0
+  checked_scene_count: 0
+  approved_scene_count: 0
   completed_scene_count: 0
   chapter_scene_counts: {} # 例: {"1": 5, "2": 6}
   chapter_planned_chars: {} # 例: {"1": 18000, "2": 19000}

@@ -1,3 +1,4 @@
+from novel_agent.storage import read_json, validate_schema
 import json
 import os
 from datetime import datetime, timezone
@@ -36,14 +37,12 @@ def empty_story_state():
 
 def load_story_state(project_dir):
     path = story_state_path(project_dir)
-    if not os.path.isfile(path):
-        return empty_story_state()
-    try:
-        payload = json.loads(read_text_file(path))
-    except json.JSONDecodeError:
-        return empty_story_state()
-    if not isinstance(payload, dict):
-        return empty_story_state()
+    payload = read_json(path, default_factory=empty_story_state)
+    validate_schema(payload, path, fields={"progress": dict, "scenes": dict, "characters": dict, "threads": dict, "payoffs": dict, "timeline": list, "open_questions": list, "continuity_findings": list})
+    for scene_id, record in payload.get("scenes", {}).items():
+        if not isinstance(record, dict):
+            from novel_agent.errors import DataCorruptionError
+            raise DataCorruptionError("invalid story scene at {}: {}".format(path, scene_id))
     base = empty_story_state()
     base.update(payload)
     base.setdefault("progress", {})
@@ -69,24 +68,12 @@ def initialize_story_state(project_dir):
 
 
 def update_story_state_from_check(project_dir, scene_ref, report):
-    payload = load_story_state(project_dir)
-    scene_id = scene_ref["canonical_id"] if scene_ref else ""
-    if scene_id:
-        status = "completed" if report.get("status") == "pass" else "needs_repair"
-        if report.get("status") == "warning":
-            status = "drafted"
-        payload["active_scene"] = scene_id
-        payload["scenes"][scene_id] = {
-            "status": status,
-            "path": report.get("target_file", ""),
-            "actual_chars": report.get("actual_chars", 0),
-            "check_status": report.get("status", "unknown"),
-            "needs_expand": report.get("needs_expand", False),
-            "blocking_issue_count": len(report.get("blocking_issues", [])),
-            "warning_count": len(report.get("warnings", [])),
-        }
-    payload["progress"] = {
-        "completed_scene_count": count_completed_scene_files(project_dir),
-        "total_chars_written": count_total_written_chars(project_dir),
-    }
-    return save_story_state(project_dir, payload)
+    if not scene_ref or report.get("scope") != "scene":
+        return load_story_state(project_dir)
+    from novel_agent.scene_status import collect_project_status, _sync_status_projections_locked
+    from novel_agent.storage import project_lock
+    with project_lock(project_dir):
+        snapshot = collect_project_status(project_dir)
+        snapshot["active_scene"] = scene_ref["canonical_id"]
+        _sync_status_projections_locked(project_dir, snapshot)
+        return load_story_state(project_dir)

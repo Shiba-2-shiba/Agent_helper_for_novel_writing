@@ -1,3 +1,4 @@
+from novel_agent.storage import read_json, validate_schema, text_content_hash, project_lock
 import hashlib
 import json
 import os
@@ -11,9 +12,7 @@ def utc_now():
 
 
 def file_content_hash(path):
-    if not path or not os.path.isfile(path):
-        return None
-    return hashlib.sha256(read_text_file(path).encode("utf-8")).hexdigest()
+    return text_content_hash(path)
 
 
 def _rel(path, project_dir):
@@ -59,17 +58,28 @@ def _default_quality_budget_ledger():
 
 def read_artifact_ledger(project_dir):
     path = artifact_ledger_path(project_dir)
-    if not os.path.isfile(path):
-        return {"version": 1, "updated_at": "", "artifacts": []}
-    try:
-        payload = json.loads(read_text_file(path))
-    except json.JSONDecodeError:
-        return {"version": 1, "updated_at": "", "artifacts": []}
-    if not isinstance(payload, dict):
-        return {"version": 1, "updated_at": "", "artifacts": []}
+    payload = read_json(path, default_factory=lambda: {"version": 1, "updated_at": "", "artifacts": []})
+    validate_schema(payload, path, fields={"artifacts": list})
     payload.setdefault("version", 1)
     payload.setdefault("artifacts", [])
+    _validate_artifact_records(payload["artifacts"], path)
     return payload
+
+
+def _validate_artifact_records(records, path):
+    for record in records:
+        if not isinstance(record, dict) or not isinstance(record.get("depends_on", []), list) or any(not isinstance(item, dict) for item in record.get("depends_on", [])):
+            from novel_agent.errors import DataCorruptionError
+            raise DataCorruptionError("invalid artifact record at {}".format(path))
+    from novel_agent.errors import DataCorruptionError
+    from novel_agent.dependencies import dependency_digest
+    for record in records:
+        if "dependencies" in record:
+            dependencies = record["dependencies"]
+            if not isinstance(dependencies, list) or any(not isinstance(item, dict) or item.get("kind") not in {"file", "scene_set", "projection", "artifact"} for item in dependencies):
+                raise DataCorruptionError("invalid dependency records at {}".format(path))
+            if record.get("dependency_digest") != dependency_digest(dependencies):
+                raise DataCorruptionError("invalid dependency digest at {}".format(path))
 
 
 def write_artifact_ledger(project_dir, payload):
@@ -79,15 +89,12 @@ def write_artifact_ledger(project_dir, payload):
 
 def read_quality_budget_ledger(project_dir):
     path = quality_budget_ledger_path(project_dir)
-    if not os.path.isfile(path):
-        return _default_quality_budget_ledger()
-    try:
-        payload = json.loads(read_text_file(path))
-    except json.JSONDecodeError:
-        return _default_quality_budget_ledger()
-    if not isinstance(payload, dict):
-        return _default_quality_budget_ledger()
-
+    payload = read_json(path, default_factory=_default_quality_budget_ledger)
+    validate_schema(payload, path, fields={"scenes": dict, "policy": dict})
+    from novel_agent.errors import DataCorruptionError
+    for scene_id, scene in payload.get("scenes", {}).items():
+        if not isinstance(scene, dict) or any(key in scene and not isinstance(scene[key], expected) for key, expected in (("counters", dict), ("issues", dict), ("decisions", list))):
+            raise DataCorruptionError("invalid quality budget scene at {}: {}".format(path, scene_id))
     payload.setdefault("version", 1)
     payload.setdefault("updated_at", "")
     policy = default_quality_budget_policy()
@@ -214,7 +221,7 @@ def collect_quality_issues_from_report(report, report_path=None):
     return issues
 
 
-def update_quality_budget_from_check(project_dir, scene_ref, report, report_path=None):
+def _update_quality_budget_from_check_locked(project_dir, scene_ref, report, report_path=None):
     payload = read_quality_budget_ledger(project_dir)
     scene_id = _scene_id(scene_ref)
     scene = _scene_budget_record(payload, scene_id)
@@ -339,7 +346,7 @@ def evaluate_quality_budget_for_expand(project_dir, scene_ref, report):
     }
 
 
-def record_quality_budget_action(project_dir, scene_ref, action, reason, artifacts=None, force=False, issue_key=""):
+def _record_quality_budget_action_locked(project_dir, scene_ref, action, reason, artifacts=None, force=False, issue_key=""):
     payload = read_quality_budget_ledger(project_dir)
     scene_id = _scene_id(scene_ref)
     scene = _scene_budget_record(payload, scene_id)
@@ -393,11 +400,12 @@ def dependency_record(project_dir, path, dependency_id=None):
     }
 
 
-def register_artifact(project_dir, *, artifact_id, artifact_type, path, depends_on_paths=None, source="generated"):
-    payload = read_artifact_ledger(project_dir)
+def _upsert_artifact(project_dir, payload, *, artifact_id, artifact_type, path, depends_on_paths=None, source="generated", dependencies=None):
+    from novel_agent.dependencies import snapshot_dependencies, dependency_digest
+    artifact_id = "artifact:" + _rel(path, project_dir).replace(os.sep, "/")
     now = utc_now()
     rel_path = _rel(path, project_dir)
-    existing = next((item for item in payload["artifacts"] if item.get("id") == artifact_id), None)
+    existing = next((item for item in payload["artifacts"] if item.get("path") == rel_path), None)
     created_at = existing.get("created_at") if existing else now
     protected = bool(existing.get("protected_user_content")) if existing else False
     artifact = {
@@ -408,33 +416,57 @@ def register_artifact(project_dir, *, artifact_id, artifact_type, path, depends_
         "status": "protected" if protected else "active",
         "source": existing.get("source", source) if existing else source,
         "protected_user_content": protected,
-        "depends_on": [
-            dependency_record(project_dir, dep_path)
-            for dep_path in (depends_on_paths or [])
-            if dep_path and os.path.isfile(dep_path)
-        ],
+        "depends_on": [dependency_record(project_dir, dep_path) for dep_path in (depends_on_paths or []) if dep_path],
+        "dependencies": dependencies if dependencies is not None else snapshot_dependencies(project_dir, [{"kind": "file", "path": dep_path} for dep_path in (depends_on_paths or []) if dep_path]),
         "created_at": created_at,
         "updated_at": now,
     }
-    payload["artifacts"] = [item for item in payload["artifacts"] if item.get("id") != artifact_id]
+    artifact["dependency_digest"] = dependency_digest(artifact["dependencies"])
+    _validate_artifact_records([artifact], artifact_ledger_path(project_dir))
+    payload["artifacts"] = [item for item in payload["artifacts"] if item.get("path") != rel_path]
     payload["artifacts"].append(artifact)
-    write_artifact_ledger(project_dir, payload)
     return artifact
 
 
-def register_artifacts(project_dir, items):
+def _register_artifacts_locked(project_dir, items):
+    """Apply a batch under the caller's lock, publishing only after all validate."""
+    payload = read_artifact_ledger(project_dir)
+    changed = False
     for item in items:
-        register_artifact(project_dir, **item)
-    return read_artifact_ledger(project_dir)
+        _upsert_artifact(project_dir, payload, **item)
+        changed = True
+    if changed:
+        write_artifact_ledger(project_dir, payload)
+    return payload
 
 
-def refresh_artifact_statuses(project_dir):
+def _register_artifact_locked(project_dir, *, artifact_id, artifact_type, path, depends_on_paths=None, source="generated", dependencies=None):
+    payload = _register_artifacts_locked(project_dir, [dict(
+        artifact_id=artifact_id, artifact_type=artifact_type, path=path,
+        depends_on_paths=depends_on_paths, source=source, dependencies=dependencies,
+    )])
+    return payload["artifacts"][-1]
+
+
+def register_artifact(project_dir, *, artifact_id, artifact_type, path, depends_on_paths=None, source="generated", dependencies=None):
+    with project_lock(project_dir):
+        return _register_artifact_locked(project_dir, artifact_id=artifact_id, artifact_type=artifact_type, path=path,
+                                         depends_on_paths=depends_on_paths, source=source, dependencies=dependencies)
+
+
+def register_artifacts(project_dir, items):
+    with project_lock(project_dir):
+        return _register_artifacts_locked(project_dir, items)
+
+
+def _refresh_artifact_statuses_locked(project_dir):
+    from novel_agent.dependencies import verify_dependencies
     payload = read_artifact_ledger(project_dir)
     changed = False
     for artifact in payload["artifacts"]:
         if artifact.get("status") in {"protected", "superseded", "rejected"}:
             continue
-        stale = False
+        stale = bool(verify_dependencies(project_dir, artifact["dependencies"])) if "dependencies" in artifact else False
         for dependency in artifact.get("depends_on", []):
             dep_path = os.path.join(project_dir, dependency.get("path", ""))
             if dependency.get("content_hash") != file_content_hash(dep_path):
@@ -448,6 +480,11 @@ def refresh_artifact_statuses(project_dir):
     if changed:
         write_artifact_ledger(project_dir, payload)
     return payload
+
+
+def refresh_artifact_statuses(project_dir):
+    with project_lock(project_dir):
+        return _refresh_artifact_statuses_locked(project_dir)
 
 
 def find_artifact_by_path(project_dir, path):
@@ -466,3 +503,13 @@ def append_token_ledger(project_dir, record):
     with open(path, "a", encoding="utf-8") as handle:
         handle.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
     return payload
+
+
+def update_quality_budget_from_check(project_dir, scene_ref, report, report_path=None):
+    with project_lock(project_dir):
+        return _update_quality_budget_from_check_locked(project_dir, scene_ref, report, report_path=report_path)
+
+
+def record_quality_budget_action(project_dir, scene_ref, action, reason, artifacts=None, force=False, issue_key=""):
+    with project_lock(project_dir):
+        return _record_quality_budget_action_locked(project_dir, scene_ref, action, reason, artifacts=artifacts, force=force, issue_key=issue_key)

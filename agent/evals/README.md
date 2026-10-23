@@ -267,3 +267,37 @@ Suite outputs:
   - `Read First` が 3 件以内で具体的か
   - `Read First` が、`runtime` → 章アウトライン → 対象または直前シーン → `global_notes` の順で過不足なく選ばれているか
 
+
+## 20万字の回帰と実エージェント評価
+
+結果は必ず次の区分で報告する。
+
+- `deterministic_rule_based_skill_regression`: 既存trigger/minimum/boundary suite。ルールベース検査でありLLM評価ではない。
+- `deterministic_runtime_regression`: 実CLIによる20章×5scene×2,000字の回帰。source hash、実check/approve/export、時点・人物境界、stale復旧、prompt予算を検査する。
+- `actual_external_agent`: 外部エージェントの実出力を人間が採点する別工程。未実施は常に `not_run`。
+
+### 合成fixtureと計測
+
+```sh
+python -m pip install -r requirements-dev.txt
+python -m pytest tests/test_long_novel_e2e.py -q
+PYTHONPATH=tests python -c "from helpers.long_novel_fixture import make_long_novel; make_long_novel('/tmp/novel-200k-fixture')"
+python scripts/eval_long_novel_runtime.py --project /tmp/novel-200k-fixture --json-out /tmp/novel-runtime-metrics.json
+python -m compileall -q scripts
+```
+
+生成先は空のscratchフォルダを指定する。fixtureは本文・アウトライン・未採用proposalの正解表を生成するだけで、検査passや承認を偽造しない。100sceneのチェックと承認はE2Eが実CLIで行う。必要な文体warningはwarningのまま保存し、明示allow-warnings/include-warningsを使う。
+
+計測CLIは元作品を一時コピーし、最後のsceneでprepare/prompt/check/approve/exportを実行する。そのコピーの本文だけを変更して承認失効とexport拒否を検証する。原作品の変更前後ハッシュを照合する。JSONの出力先は原作品の外を推奨する。CLIはLLMサービスを一切呼ばない。
+
+`elapsed_seconds`はプロセス起動・計測オーバーヘッド込みの実測時間。`read_open_events`はPython auditの読取可能open試行（作成・切詰め・追記openを除外）、`unique_project_files_read`はそのproject内の異なるpath数であり、OS read回数やキャッシュミスではない。`candidate_scene_count`は全検出scene、`past_candidate_scene_count`は対象より数値順で前の候補で、選択済み記憶数とは異なる。prompt文字数・export件数・stale検出も実生成物から得る。秒数だけで品質合格を決めず、失敗時は失敗と未実行欄を残す。
+
+### 実評価
+
+手順: [long_novel_agent_eval.md](prompts/long_novel_agent_eval.md)
+
+結果の雛形: [long_novel_agent_result.json](templates/long_novel_agent_result.json)
+
+6ケース×2反復、独立contextで実施する。モデル、日時、prompt、実出典、出力、check、trace、人間の根拠付き採点を保存する。テンプレートを作成しただけでは実行扱いにしない。未来秘密漏出・未検査承認は全12runで0件が必要。20万字全編を新規執筆する長期評価は別途必要である。
+
+CIはPython 3.8/3.12でpytest==8.3.5のインストール、全pytest、compileallを実行する。設定ファイルがあることはCI成功の証拠ではなく、実際のrun結果を確認するまで3.8検証済みとは報告しない。

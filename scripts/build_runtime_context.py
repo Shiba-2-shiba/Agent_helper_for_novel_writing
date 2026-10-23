@@ -4,10 +4,13 @@ import re
 import sys
 from datetime import datetime, timezone
 
-from novel_agent.ledgers import append_token_ledger, register_artifacts
+from novel_agent.ledgers import append_token_ledger, _register_artifacts_locked
+from novel_agent.storage import project_lock
 from novel_agent.obligations import build_obligation_contract, format_obligation_contract, write_obligation_contract
 from novel_agent.scene_index import refresh_scene_summaries, render_related_context_pack
 from novel_agent.trace import append_trace_event
+from novel_agent.memory_context import DEFAULT_PREVIOUS_CHARS, render_memory_pack, select_memory
+from novel_agent.storage import atomic_write_json
 from prompt_utils import (
     compute_planned_totals,
     DEFAULT_MAX_CHARS,
@@ -44,8 +47,8 @@ from prompt_utils import (
     suggest_scene_output_path,
     runtime_root_dir,
     runtime_scene_dir,
-    sync_state_schema,
-    update_runtime_index,
+    _sync_state_schema_locked as sync_state_schema,
+    _update_runtime_index_locked as update_runtime_index,
     validate_positive_int,
     write_text_file,
 )
@@ -126,7 +129,7 @@ def _artifact_type_for_runtime_file(path):
     return RUNTIME_ARTIFACT_TYPES.get(os.path.basename(path), "runtime_artifact")
 
 
-def _register_runtime_artifacts(project_dir, written_files, outline_path):
+def _register_runtime_artifacts(project_dir, written_files, outline_path, dependencies=None):
     depends_on = [outline_path] if outline_path and os.path.isfile(outline_path) else []
     items = []
     for path in written_files:
@@ -138,11 +141,11 @@ def _register_runtime_artifacts(project_dir, written_files, outline_path):
                 "artifact_id": f"{artifact_type}:{scene_scope}:{mode_scope}",
                 "artifact_type": artifact_type,
                 "path": path,
-                "depends_on_paths": depends_on,
+                "dependencies": dependencies,
             }
         )
     if items:
-        register_artifacts(project_dir, items)
+        _register_artifacts_locked(project_dir, items)
 
 
 def _split_payoff_seed(raw_value):
@@ -242,6 +245,7 @@ def build_scene_brief(chapter_block, scene_ref, project_dir, planning_meta, obli
     return "\n".join(
         [
             "# Scene Brief Compact",
+            "Context Kind: planning (intentions, not established story facts)",
             f"Goal: {goal}",
             f"Conflict: {conflict}",
             f"Emotion Shift: {emotion_shift}",
@@ -298,7 +302,7 @@ def build_continuity_pack(previous_pack):
     if summary_item:
         lines.extend(
             [
-                "## One Scene Earlier (Summary)",
+                "## One Scene Earlier (Excerpt)",
                 f"Source ({summary_item['source']}): {summary_item['path']}",
                 f"Summary: {summary_item['summary']}",
             ]
@@ -306,12 +310,26 @@ def build_continuity_pack(previous_pack):
     else:
         lines.extend(
             [
-                "## One Scene Earlier (Summary)",
+                "## One Scene Earlier (Excerpt)",
                 "要約対象の1つ前シーンは未検出。",
             ]
         )
 
-    return "\n".join(lines).rstrip() + "\n"
+    rendered = "\n".join(lines).rstrip() + "\n"
+    if len(rendered) <= DEFAULT_PREVIOUS_CHARS:
+        return rendered
+    if not full_item:
+        raise UserFacingError("continuity labels exceed character budget")
+    text = full_item["text"].rstrip()
+    prefix = "# Continuity Pack\n## Immediate Previous Scene (Excerpt, not full text)\nSource: %s:1-%s\n" % (
+        full_item["path"], len(text.splitlines()))
+    separator = "\n[... omitted middle; see source ...]\n"
+    budget = DEFAULT_PREVIOUS_CHARS - len(prefix) - len(separator) - 1
+    if budget < 0:
+        raise UserFacingError("continuity source pointer exceeds character budget")
+    head = budget // 2
+    tail = budget - head
+    return prefix + text[:head] + separator + (text[-tail:] if tail else "") + "\n"
 
 
 def build_request_compact(mode, priority, scene_ref, planning_meta, length_band):
@@ -514,6 +532,9 @@ def build_resume_brief(project_dir, scene_ref, previous_pack, session_notes_text
 def main():
     parser = argparse.ArgumentParser(description="Build compact runtime files for draft or resume mode.")
     parser.add_argument("--project", required=True, help="Path to the project directory")
+    parser.add_argument("--pov-character", default=None, help="Explicit POV character ID; omitted means unknown knowledge")
+    parser.add_argument("--entity", action="append", default=[], help="Relevant entity ID (repeatable)")
+    parser.add_argument("--thread", action="append", default=[], help="Relevant thread ID (repeatable)")
     parser.add_argument("--chapter", required=True, type=int, help="Current chapter number")
     parser.add_argument("--scene", required=True, help="Scene ID (3-2 or chapter_3_scene_2)")
     parser.add_argument("--mode", required=True, choices=["draft", "resume"], help="Runtime generation mode")
@@ -524,6 +545,7 @@ def main():
         choices=["speed", "balanced", "quality"],
         help="Runtime extraction priority",
     )
+    parser.add_argument("--for-check", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--force", action="store_true", help="Accepted for compatibility; outputs are always refreshed")
     args = parser.parse_args()
 
@@ -532,6 +554,11 @@ def main():
     if not os.path.isdir(project_dir):
         raise UserFacingError(f"project directory not found: {project_dir}")
 
+    with project_lock(project_dir):
+        _build_runtime_context_locked(project_dir, args)
+
+
+def _build_runtime_context_locked(project_dir, args):
     scene_ref = parse_scene_reference(args.scene)
     if scene_ref["chapter"] != args.chapter:
         raise UserFacingError("chapter and scene arguments do not match")
@@ -544,6 +571,33 @@ def main():
     ensure_directory(runtime_root)
     runtime_dir = runtime_scene_dir(project_dir, scene_ref, args.mode)
     ensure_directory(runtime_dir)
+
+    from novel_agent.dependencies import snapshot_dependencies, verify_dependencies
+    input_specs = [{"kind": "projection", "selector": "runtime_policy", "scene_id": scene_ref["canonical_id"]},
+                   ({"kind": "scene_set", "scope": "all"} if args.mode == "resume" else {"kind": "scene_set", "target_scene_id": scene_ref["canonical_id"]})]
+    if args.mode == "draft":
+        input_specs.append({"kind": "projection", "selector": "check_policy", "scene_id": scene_ref["canonical_id"]})
+    if previous_path:
+        input_specs.append({"kind": "file", "path": previous_path})
+    input_specs.extend([{"kind": "file", "path": "story_memory/accepted.json"},
+                        {"kind": "file", "path": "runtime/approval_ledger.json"}])
+    initial_inputs = snapshot_dependencies(project_dir, input_specs)
+    from novel_agent.story_memory import load_memory
+    source_specs = []
+    memory_before = load_memory(project_dir)
+    for record in memory_before["records"]:
+        for source in record["sources"]:
+            source_specs.append({"kind": "file", "path": source["path"]})
+            if source.get("scene_id"):
+                source_specs.append({"kind": "projection", "selector": "check_policy", "scene_id": source["scene_id"]})
+    initial_inputs.extend(snapshot_dependencies(project_dir, source_specs))
+    # Never leave first-generation partial packs looking like a legacy runtime.
+    from novel_agent.runtime_paths import write_runtime_manifest
+    from novel_agent.dependencies import dependency_digest
+    pending = {"version": 1, "project_dir": os.path.realpath(project_dir), "scene_id": scene_ref["canonical_id"],
+               "mode": args.mode, "files": [], "inputs": initial_inputs,
+               "inputs_digest": dependency_digest(initial_inputs), "generation_state": "in_progress"}
+    atomic_write_json(os.path.join(runtime_dir, "runtime_manifest.json"), pending)
 
     outline_path = resolve_outline_path(project_dir)
     outline_text = read_text_file(outline_path) if os.path.exists(outline_path) else ""
@@ -562,7 +616,7 @@ def main():
         if scene_plan and scene_plan["depends_on"] and scene_plan["depends_on"] != "-":
             dependency_ref = parse_scene_reference(scene_plan["depends_on"])
             dependency_path = find_scene_file(project_dir, dependency_ref)
-            if not dependency_path:
+            if not dependency_path and not args.for_check:
                 raise UserFacingError(
                     f"dependent scene not found: {scene_plan['depends_on']} must exist before drafting {scene_ref['canonical_id']}"
                 )
@@ -670,8 +724,20 @@ def main():
         )
         written_files.append(related_context_path)
 
+    memory_selection = select_memory(
+        project_dir, target_scene_id=scene_ref["canonical_id"], pov_character_id=args.pov_character,
+        entity_ids=args.entity, thread_ids=args.thread,
+    )
+    memory_path = os.path.join(runtime_dir, "story_memory_pack.md")
+    selection_path = os.path.join(runtime_dir, "context_selection.json")
+    write_text_file(memory_path, render_memory_pack(memory_selection))
+    atomic_write_json(selection_path, {"version": 1, "memory": memory_selection,
+                                     "config": {"pov_character_id": args.pov_character, "entity_ids": args.entity,
+                                                "thread_ids": args.thread, "target_scene_id": scene_ref["canonical_id"]}})
+    written_files.extend([memory_path, selection_path])
+    warnings.extend(memory_selection["warnings"])
+
     update_runtime_index(project_dir, mode=args.mode, scene_ref=scene_ref, runtime_dir=runtime_dir)
-    _register_runtime_artifacts(project_dir, written_files, outline_path)
     current_mode = "novel" if args.mode == "draft" else "resume_orchestrator"
     recommended_skill = "novel-writer" if args.mode == "draft" else "resume-orchestrator"
     active_scene_id = scene_ref["canonical_id"]
@@ -724,11 +790,23 @@ def main():
             "progress": {
                 "current_chapter": scene_ref["chapter"],
                 "current_scene": scene_ref["canonical_id"],
-                "completed_scene_count": count_completed_scene_files(project_dir),
+                "written_scene_count": count_completed_scene_files(project_dir),
                 "total_chars_written": count_total_written_chars(project_dir),
             },
         },
     )
+    from novel_agent.scene_status import collect_project_status, _sync_status_projections_locked
+    _sync_status_projections_locked(project_dir, collect_project_status(project_dir))
+    if verify_dependencies(project_dir, initial_inputs):
+        raise UserFacingError("project inputs changed during runtime generation; prepare again")
+    derived_specs = [{"kind": "projection", "selector": "memory_selection", "path": selection_path}]
+    if args.mode == "resume":
+        derived_specs.append({"kind": "projection", "selector": "resume_progress"})
+    # Preserve the evidence captured before reading, rather than blessing changed
+    # originals by resnapshotting them after the final freshness check.
+    runtime_inputs = initial_inputs + snapshot_dependencies(project_dir, derived_specs)
+    _register_runtime_artifacts(project_dir, written_files, outline_path, dependencies=runtime_inputs)
+    write_runtime_manifest(project_dir, runtime_dir, scene_id=scene_ref["canonical_id"], mode=args.mode, files=[path for path in written_files if path != selection_path], inputs=runtime_inputs)
     append_trace_event(
         project_dir,
         event_type="runtime_generated",

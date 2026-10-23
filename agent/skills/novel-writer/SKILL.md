@@ -44,7 +44,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - `python scripts/build_draft_prompt.py --project <project_path>`
 - `Depends On` があるシーンは、依存先 `txt` が無い場合に本文執筆へ進めない
 - `request_compact.md` または `scene_brief_compact.md` に `Planning Gate: blocked` がある場合は、本文執筆へ進まず `setting-creator` へ戻す
-- `runtime/` が使えない場合のみ、従来の広い文脈参照へフォールバックする
+- `runtime/` が使えない場合は正本を調べて同じsceneで再prepareする。別sceneのlatestや未検証の古いruntimeを執筆へ流用しない
 
 ## 2. 文脈を集める
 
@@ -125,3 +125,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 - `needs_expand=true` なのに全面再生成へ戻らない
 - `obligation_status=fail` のとき、文字数 expansion で解決しようとしない
 
+
+# Shared Long-Novel Contract
+
+開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。

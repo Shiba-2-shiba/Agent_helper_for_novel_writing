@@ -2,6 +2,15 @@ import argparse
 import os
 import re
 import sys
+import subprocess
+import hashlib
+from datetime import datetime, timezone
+
+from novel_agent.storage import text_content_hash, project_lock
+from novel_agent.dependencies import snapshot_dependencies, dependency_digest, current_check_policy
+from novel_agent.runtime_paths import require_runtime_current
+from novel_agent.approvals import validate_check_identity
+
 
 from novel_agent.text_quality import (
     META_PATTERNS,
@@ -66,10 +75,10 @@ def load_forbidden_terms(runtime_dir):
     return terms or ["###", "```", "本文のみ出力", "生成しました"]
 
 
-def collect_forbidden_hits(text, runtime_dir):
+def collect_forbidden_hits(text, runtime_dir, rules=None):
     hits = []
     details = []
-    for rule in load_forbidden_terms(runtime_dir):
+    for rule in (load_forbidden_terms(runtime_dir) if rules is None else rules):
         if "見出し" in rule and re.search(r"(?m)^\s*#+\s+", text):
             if "heading_rule" not in hits:
                 hits.append("heading_rule")
@@ -141,13 +150,42 @@ def main():
 
     text_path = resolve_relative_path(args.text, base_dirs=[project_dir], must_exist=True)
     scene_ref = infer_scene_ref_from_path(text_path)
-    runtime_dir = resolve_runtime_dir(
-        project_dir,
-        mode="draft",
-        scene_ref=scene_ref,
-        runtime_dir_arg=args.runtime_dir,
-    )
-    scene_band = parse_scene_brief_band(runtime_dir)
+    if scene_ref:
+        from prompt_utils import find_scene_file
+        canonical = find_scene_file(project_dir, scene_ref)
+        if not canonical or os.path.realpath(canonical) != os.path.realpath(text_path):
+            raise UserFacingError("scene text must be the canonical project scene path")
+        try:
+            runtime_dir = resolve_runtime_dir(project_dir, mode="draft", scene_ref=scene_ref, runtime_dir_arg=args.runtime_dir)
+        except UserFacingError:
+            if args.runtime_dir:
+                raise
+            command = [sys.executable, os.path.join(os.path.dirname(__file__), "build_runtime_context.py"),
+                       "--project", project_dir, "--chapter", str(scene_ref["chapter"]), "--scene", scene_ref["canonical_id"], "--mode", "draft", "--for-check"]
+            result = subprocess.run(command, capture_output=True, text=True)
+            if result.returncode:
+                raise UserFacingError("same-scene prepare failed: " + result.stdout.strip())
+            runtime_dir = resolve_runtime_dir(project_dir, mode="draft", scene_ref=scene_ref)
+        require_runtime_current(project_dir, runtime_dir)
+        policy = current_check_policy(project_dir, scene_ref["canonical_id"])
+        scene_band = policy["length_band"]
+        obligation_contract = policy["obligation_contract"]
+        specs = [{"kind": "projection", "selector": "check_policy", "scene_id": scene_ref["canonical_id"]}]
+    else:
+        # Standalone drafts never consume latest_by_mode or mutate scene state.
+        runtime_dir = os.path.join(project_dir, "runtime")
+        if args.runtime_dir:
+            runtime_dir = resolve_relative_path(args.runtime_dir, base_dirs=[project_dir], must_exist=True)
+            if os.path.isfile(os.path.join(runtime_dir, "runtime_manifest.json")):
+                raise UserFacingError("standalone text cannot use scene-bound runtime")
+        scene_band = None
+        obligation_contract = None
+        specs = [{"kind": "file", "path": os.path.join(runtime_dir, "style_contract_compact.md")}]
+    check_inputs = snapshot_dependencies(project_dir, specs)
+    if scene_ref:
+        policy = check_inputs[0]["value"]
+        scene_band = policy["length_band"]
+        obligation_contract = policy["obligation_contract"]
     effective_min = scene_band["min"] if scene_band else args.min_chars
     effective_target = scene_band["target"] if scene_band else args.target_chars
     effective_max = scene_band["max"] if scene_band else args.max_chars
@@ -157,7 +195,7 @@ def main():
     body_text = read_text_file(text_path)
     actual_chars = len(body_text)
     violations, violation_details = collect_format_violations(body_text)
-    forbidden_hits, forbidden_hit_details = collect_forbidden_hits(body_text, runtime_dir)
+    forbidden_hits, forbidden_hit_details = collect_forbidden_hits(body_text, runtime_dir, extract_forbidden_terms(policy["style_contract"]) if scene_ref else None)
     paragraph_count_value = paragraph_count(body_text)
     dialogue_ratio = dialogue_ratio_hint(body_text)
     quality_assessment = classify_quality(
@@ -169,8 +207,6 @@ def main():
         paragraph_count_value=paragraph_count_value,
         dialogue_ratio=dialogue_ratio,
     )
-    obligation_path = os.path.join(runtime_dir, "obligation_contract.json")
-    obligation_contract = load_obligation_contract(obligation_path)
     obligation_assessment = check_obligations(project_dir, obligation_contract, scene_type=scene_type)
     if obligation_assessment["blocking_issues"]:
         quality_assessment["blocking_issues"].extend(obligation_assessment["blocking_issues"])
@@ -193,6 +229,15 @@ def main():
             quality_assessment["status"] = "warning"
 
     report = {
+        "version": 2,
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "scope": "scene" if scene_ref else "standalone",
+        "scene_id": scene_ref["canonical_id"] if scene_ref else None,
+        "source_path": os.path.relpath(text_path, project_dir).replace(os.sep, "/"),
+        "source_hash": hashlib.sha256(body_text.encode("utf-8")).hexdigest(),
+        "hash_algorithm": "sha256-utf8-text-v1",
+        "check_inputs": check_inputs,
+        "check_inputs_digest": dependency_digest(check_inputs),
         "target_file": text_path,
         "actual_chars": actual_chars,
         "scene_type": scene_type,
@@ -223,9 +268,18 @@ def main():
     }
 
     output_path = os.path.join(runtime_dir, "check_report.json")
-    write_json_file(output_path, report)
-    update_quality_budget_from_check(project_dir, scene_ref, report, report_path=output_path)
-    update_story_state_from_check(project_dir, scene_ref, report)
+    # Check against current source and policy again immediately before persistence.
+    with project_lock(project_dir):
+        validate_check_identity(project_dir, scene_ref, text_path, report)
+        write_json_file(output_path, report)
+        if scene_ref:
+            from novel_agent.ledgers import _update_quality_budget_from_check_locked, _register_artifact_locked
+            from novel_agent.scene_status import collect_project_status, _sync_status_projections_locked
+            _update_quality_budget_from_check_locked(project_dir, scene_ref, report, report_path=output_path)
+            _register_artifact_locked(project_dir, artifact_id="check", artifact_type="check_report", path=output_path, dependencies=check_inputs + snapshot_dependencies(project_dir, [{"kind": "file", "path": text_path}]))
+            snapshot = collect_project_status(project_dir)
+            snapshot["active_scene"] = scene_ref["canonical_id"]
+            _sync_status_projections_locked(project_dir, snapshot)
     append_trace_event(
         project_dir,
         event_type="scene_checked",
@@ -243,35 +297,6 @@ def main():
         summary="story_state updated from scene check",
         artifacts=[os.path.join(project_dir, "runtime", "story_state.json")],
     )
-    if scene_ref is not None:
-        outline_status = (
-            "completed"
-            if (
-                not report["needs_expand"]
-                and not report["format_violations"]
-                and not report["forbidden_hits"]
-                and report["within_max"]
-            )
-            else "drafted"
-        )
-        update_scene_ledger_status(project_dir, scene_ref, outline_status)
-        sync_state_schema(
-            project_dir,
-            {
-                "active_work": {
-                    "active_chapter": scene_ref["chapter"],
-                    "active_scene": scene_ref["canonical_id"],
-                },
-                "progress": {
-                    "current_chapter": scene_ref["chapter"],
-                    "current_scene": scene_ref["canonical_id"],
-                    "last_checked_scene": scene_ref["canonical_id"],
-                    "last_completed_scene": scene_ref["canonical_id"],
-                    "completed_scene_count": count_completed_scene_files(project_dir),
-                    "total_chars_written": count_total_written_chars(project_dir),
-                },
-            },
-        )
     print("OK: scene output checked")
     print(f"OK: needs_expand={str(report['needs_expand']).lower()} actual_chars={actual_chars}")
 

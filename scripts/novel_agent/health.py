@@ -1,9 +1,12 @@
+from novel_agent.errors import DataCorruptionError
+from novel_agent.storage import read_json
 import json
 import os
 
-from novel_agent.approvals import refresh_approval_statuses
+from novel_agent.approvals import read_approval_ledger, validate_approval_current
 from novel_agent.ledgers import read_artifact_ledger, read_quality_budget_ledger, token_ledger_path, utc_now
 from novel_agent.scene_index import refresh_scene_summaries, scene_summaries_path
+from novel_agent.story_memory import load_memory, memory_path, memory_status
 from novel_agent.story_state import initialize_story_state, load_story_state, save_story_state, story_state_path
 from novel_agent.trace import compile_trace, trace_log_path
 from prompt_utils import (
@@ -27,12 +30,36 @@ def _issue(issue_type, message, **extra):
 
 
 def _load_json(path):
-    if not os.path.isfile(path):
-        return None
+    return read_json(path, default_factory=dict)
+
+
+def _corruption_issues(project_dir):
+    issues = []
     try:
-        return json.loads(read_text_file(path))
-    except json.JSONDecodeError:
-        return None
+        load_memory(project_dir)
+    except DataCorruptionError as exc:
+        issues.append(_issue("data_corruption", str(exc), path=memory_path(project_dir)))
+    runtime = runtime_root_dir(project_dir)
+    validators = {
+        "approval_ledger.json": lambda: __import__("novel_agent.approvals", fromlist=["read_approval_ledger"]).read_approval_ledger(project_dir),
+        "artifact_ledger.json": lambda: read_artifact_ledger(project_dir),
+        "quality_budget_ledger.json": lambda: read_quality_budget_ledger(project_dir),
+        "story_state.json": lambda: load_story_state(project_dir),
+        "runtime_index.json": lambda: read_runtime_index(project_dir),
+    }
+    for root, _, files in os.walk(runtime):
+        for name in files:
+            if not name.endswith(".json") or name == "health_report.json":
+                continue
+            path = os.path.join(root, name)
+            try:
+                if root == runtime and name in validators:
+                    validators[name]()
+                else:
+                    _load_json(path)
+            except DataCorruptionError as exc:
+                issues.append(_issue("data_corruption", str(exc), path=path))
+    return issues
 
 
 def _scene_id(item):
@@ -77,9 +104,18 @@ def _count_token_ledger_records(project_dir):
 
 
 def build_health_report(project_dir):
-    blocking = []
+    blocking = _corruption_issues(project_dir)
+    if blocking:
+        return {"version": 1, "created_at": utc_now(), "status": "fail", "blocking_issues": blocking, "warnings": [], "info": []}
     warnings = []
     info = []
+    memory = memory_status(project_dir)
+    for record in memory["records"]:
+        if record["status"] == "stale":
+            warnings.append(_issue("story_memory_stale", "; ".join(record["reasons"]),
+                                   record_id=record["id"], path=memory_path(project_dir)))
+    info.append(_issue("story_memory", "accepted memory status", revision=memory["revision"],
+                       active_count=sum(record["status"] == "active" for record in memory["records"])))
 
     outline_path = resolve_outline_path(project_dir, require_exists=False)
     if not os.path.isfile(outline_path):
@@ -92,11 +128,12 @@ def build_health_report(project_dir):
         except OSError:
             blocking.append(_issue("scene_unreadable", "scene text cannot be read", path=item["path"]))
 
-    approval_payload = refresh_approval_statuses(project_dir)
+    approval_payload = read_approval_ledger(project_dir)
     approved_count = 0
     for scene_id, record in approval_payload.get("scenes", {}).items():
         if not isinstance(record, dict):
             continue
+        record = dict(record, **validate_approval_current(project_dir, record))
         if record.get("status") == "approved":
             approved_count += 1
         if record.get("status") == "stale":
@@ -125,10 +162,25 @@ def build_health_report(project_dir):
             warnings.append(_issue("scene_summaries_stale", "scene_summaries.jsonl is older than scene text", count=len(newer)))
 
     artifact_payload = read_artifact_ledger(project_dir)
-    stale_artifacts = [
-        item for item in artifact_payload.get("artifacts", [])
-        if isinstance(item, dict) and item.get("status") == "stale"
-    ]
+    from novel_agent.dependencies import verify_dependencies
+    stale_artifacts = []
+    for item in artifact_payload.get("artifacts", []):
+        if "dependencies" not in item:
+            warnings.append(_issue("legacy_dependencies", "legacy artifact dependency guarantees require regeneration", path=item.get("path", "")))
+            if item.get("status") == "stale":
+                stale_artifacts.append(item)
+        elif verify_dependencies(project_dir, item["dependencies"]):
+            stale_artifacts.append(item)
+    from novel_agent.scene_status import collect_project_status, _render_outline, _render_yaml_section
+    snapshot = collect_project_status(project_dir)
+    if any(state.get("progress", {}).get(key) != value for key, value in snapshot["progress"].items()) or any(state.get("scenes", {}).get(key, {}).get("status") != value["status"] for key, value in snapshot["scenes"].items()):
+        warnings.append(_issue("status_projection_stale", "story_state status projection differs from current checks"))
+    from prompt_utils import find_state_schema_path
+    state_path = find_state_schema_path(project_dir)
+    if state_path and _render_yaml_section(read_text_file(state_path), "progress", snapshot["progress"]) != read_text_file(state_path):
+        warnings.append(_issue("status_projection_stale", "YAML progress projection differs", path=state_path))
+    if os.path.isfile(outline_path) and _render_outline(read_text_file(outline_path), snapshot["scenes"]) != read_text_file(outline_path):
+        warnings.append(_issue("status_projection_stale", "Scene Ledger status projection differs", path=outline_path))
     if stale_artifacts:
         warnings.append(_issue("stale_artifacts", "artifact ledger contains stale artifacts", count=len(stale_artifacts)))
 
@@ -174,10 +226,14 @@ def write_health_report(project_dir, report):
 
 def run_safe_fixes(project_dir):
     fixed = []
+    # Never replace unreadable persistent data with empty reconstructed defaults.
+    if _corruption_issues(project_dir):
+        return fixed
     if collect_scene_metadata(project_dir):
         refresh_scene_summaries(project_dir)
         fixed.append("scene_summaries")
-    initialize_story_state(project_dir)
+    from novel_agent.scene_status import collect_project_status, sync_status_projections
+    sync_status_projections(project_dir, collect_project_status(project_dir))
     fixed.append("story_state")
     compile_trace(project_dir)
     fixed.append("trace_views")

@@ -46,7 +46,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 
 ## 3. 改稿する
 
-- 原則 `1000-1500` の範囲に収める
+- 対象シーンのLength Bandを維持する。契約不明の旧案件だけ `1000-1500` をfallbackにする
 - 文体契約と前後接続を維持する
 - 明示的な差し替え依頼がある場合は対象シーンを更新する
 - 差し替え範囲が曖昧なら、改稿案として別扱いで提示してから反映する
@@ -77,3 +77,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 - 前後の接続を無視しない
 
 
+
+# Shared Long-Novel Contract
+
+開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。

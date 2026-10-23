@@ -33,6 +33,7 @@ def main():
 
     prompt = sub.add_parser("prompt")
     prompt.add_argument("--project", required=True)
+    prompt.add_argument("--scene", default="")
     prompt.add_argument("--runtime_dir", default="")
 
     check = sub.add_parser("check")
@@ -73,6 +74,8 @@ def main():
         print("NEXT: run prompt to build draft_prompt.txt")
     elif args.command == "prompt":
         script_args = ["--project", project_dir]
+        if args.scene:
+            script_args.extend(["--scene", args.scene])
         if args.runtime_dir:
             script_args.extend(["--runtime_dir", args.runtime_dir])
         _run_script("build_draft_prompt.py", script_args)

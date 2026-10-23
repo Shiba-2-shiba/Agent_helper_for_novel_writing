@@ -1,3 +1,4 @@
+from novel_agent.storage import read_json, validate_schema
 import json
 import os
 
@@ -70,12 +71,8 @@ def write_obligation_contract(path, contract):
 def load_obligation_contract(path):
     if not os.path.isfile(path):
         return None
-    try:
-        payload = json.loads(read_text_file(path))
-    except json.JSONDecodeError:
-        return None
-    if not isinstance(payload, dict):
-        return None
+    payload = read_json(path, default_factory=dict)
+    validate_schema(payload, path, fields={key: list for key in ("required_dependencies", "must_hit_now", "required_payoff_touches", "forbidden_crossings")})
     payload.setdefault("required_dependencies", [])
     payload.setdefault("must_hit_now", [])
     payload.setdefault("required_payoff_touches", [])

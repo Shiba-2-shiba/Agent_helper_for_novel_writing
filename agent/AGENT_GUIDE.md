@@ -1,7 +1,7 @@
 # Agent Guide (Common)
 
 このフォルダは全プロジェクト共通のベースです。
-`compose_agent_package.py` によって `<project>/agent/` としてセットアップされます。
+`scripts/init_project.py` がプロジェクト固有stateとmemoryを作成します。共通手順はこのリポジトリの `agent/` を参照します。
 
 ---
 
@@ -59,7 +59,7 @@
 
 - 通常運用では、本文の正本はシーン単位 `txt` ファイルとする
 - `body.md` は本文の追記先ではなく、章方針メモまたは大幅改稿時の補助ファイルとして扱う
-- 1 シーンの文字数契約は原則 `1000-1500`
+- 1シーンの文字数は対象Scene LedgerのLength Bandを優先する。`1000-1500` は契約不明時の旧互換fallbackのみ。
 - 文字数不足の補完は、全文再生成ではなく局所差分ブロックを優先し、必要なら `scripts/apply_expand_edits.py` で反映する
 - `session_notes.md` は再開品質重視で運用し、古い詳細は必要に応じて `session_archive.md` へ退避する
 - `state_schema_*.yaml` は、特定作品の固定サンプルではなく、案件ごとの「現在地」と「次に何をするか」を持つ
@@ -73,3 +73,7 @@
 ## Selected Catalogs
 - novel
 
+
+## 20万字の共通運用
+
+`docs/long_novel_workflow.md` を正本手順とする。現行runtimeの対象ID・鮮度を確認し、本文はcheck→明示approveを経る。completedは機械検査passであり、承認・文学的完成とは別。記憶は承認済み本文から提案→検証→明示採用し、未採用・stale・未来の情報を過去事実として扱わない。詳しくは `docs/story_memory_format.md`。移行は `docs/migrate_100k_to_200k.md` のdry-runから行う。

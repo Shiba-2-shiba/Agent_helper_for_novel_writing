@@ -119,3 +119,7 @@ description: Build setting documents, strengthen logic, and repair plot foundati
 - `planning_gate_enabled=true` なのに `05_chapter_outline.md` を optional 扱いしない
 - legacy fallback を除き、`05_chapter_outline_100k.md` を canonical path のように扱わない
 - 計画ゲート未通過のまま、直近シーンの段取りや本文執筆へ進めない
+
+# Shared Long-Novel Contract
+
+開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。

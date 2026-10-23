@@ -27,8 +27,8 @@ description: Initialize a new novel project from an agreed concept or logline. U
 ## 1. 初期条件を確定する
 
 - 企画名、保存先、長さ目標、ジャンルを確認する
-- `Target Total Chars` は `30000 / 50000 / 100000` のいずれかを最初に決める
-- `Target Length Profile` を使う場合は `novel_30k / novel_50k / novel_100k` に揃える
+- `Target Total Chars` は `30000 / 50000 / 100000 / 200000` のいずれかを最初に決める
+- `Target Length Profile` を使う場合は `novel_30k / novel_50k / novel_100k / novel_200k` に揃える
 - `Target Total Chars` 未確定なら、初期化を止めて前段確認へ戻す
 - まだ曖昧な要素と、いま固定してよい要素を分ける
 - 既存案件を上書きしないことを先に確認する
@@ -38,7 +38,8 @@ description: Initialize a new novel project from an agreed concept or logline. U
 ## 2. 案件の箱を作る
 
 - このリポジトリ標準の新規案件を作る場合は、まず以下を実行する
-- `python scripts/init_project.py <project_name> --target-total-chars <30000|50000|100000>`
+- `python scripts/init_project.py <project_name> --target-total-chars <30000|50000|100000|200000>`
+- 章数を変更する場合は `--chapter-count N` を追加する。未指定は旧5章構成を維持する
 - `--target-total-chars` を省略して初期化しない
 - 既存案件に対して運用情報だけ整える場合は、初期化スクリプトを実行せず、必要な `agent/` 管理対象だけを整備する
 - まだ未確定の設定は、空欄または保留として残す
@@ -96,3 +97,7 @@ description: Initialize a new novel project from an agreed concept or logline. U
 - 初期化結果の報告だけで終わらず、次の着手点を空欄のまま残さない
 - `planning_gate_enabled=true` の案件を、章配分とシーン在庫が未整理のまま `scene-planner` へ直接渡さない
 - legacy project の `Length Mode` は fallback 情報としてのみ扱う
+
+# Shared Long-Novel Contract
+
+開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。

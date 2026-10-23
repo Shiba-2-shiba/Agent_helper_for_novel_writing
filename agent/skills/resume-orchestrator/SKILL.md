@@ -57,7 +57,7 @@ description: Recover project state, identify the correct next step, and route ba
 - `runtime/resume_brief.md` がない、古い、または対象シーンと不一致なら、先に以下を実行して更新する
 - `python scripts/build_runtime_context.py --project <project_path> --chapter <chapter> --scene <scene> --mode resume`
 - `resume_brief` の文言より、実在する scene `txt` と scene 対応 `check_report` を優先する
-- `runtime/` が使えない場合のみ、従来の広い文脈参照へフォールバックする
+- `runtime/` が使えない場合は正本を調べて同じsceneで再prepareする。別sceneのlatestや未検証の古いruntimeを執筆へ流用しない
 
 ## 3. 現在地を確認する
 
@@ -153,3 +153,7 @@ description: Recover project state, identify the correct next step, and route ba
 - `runtime/resume_brief.md` が使えるのに、先にフル文脈を読み直さない
 - 推奨スキルを複数列挙して判断をユーザーに丸投げしない
 
+
+# Shared Long-Novel Contract
+
+開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。

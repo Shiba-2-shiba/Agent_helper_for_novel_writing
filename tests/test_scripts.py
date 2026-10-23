@@ -779,7 +779,7 @@ class TestRuntimeRefactorScripts:
         assert "## Planning Gate Brief" in draft_prompt
         assert draft_prompt.rstrip().endswith("本文のみ出力")
 
-        short_text_path = os.path.join(runtime_project, "draft_short.txt")
+        short_text_path = os.path.join(runtime_project, "chapter_2_scene_3.txt")
         with open(short_text_path, "w", encoding="utf-8") as handle:
             handle.write("「短い」\n\n主人公は息を整えた。")
 
@@ -1819,7 +1819,17 @@ class TestRuntimeRefactorScripts:
             capture_output=True,
             text=True,
         )
+        runtime_dir = scene_runtime_dir(project_dir, "2-3", "draft")
+        os.remove(os.path.join(runtime_dir, "runtime_manifest.json"))
+        ledger_path = os.path.join(project_dir, "runtime", "artifact_ledger.json")
+        ledger = json.load(open(ledger_path, encoding="utf-8"))
+        from novel_agent.ledgers import dependency_record
         outline_path = os.path.join(project_dir, "05_chapter_outline.md")
+        for artifact in ledger["artifacts"]:
+            artifact.pop("dependencies", None)
+            artifact.pop("dependency_digest", None)
+            artifact["depends_on"] = [dependency_record(project_dir, outline_path)]
+        write_utf8(ledger_path, json.dumps(ledger))
         with open(outline_path, "a", encoding="utf-8") as handle:
             handle.write("\n<!-- changed after runtime generation -->\n")
 
@@ -1901,7 +1911,8 @@ class TestRuntimeRefactorScripts:
         assert payload["active_scene"] == "2-3"
         assert payload["scenes"]["2-3"]["check_status"] == "pass"
         assert payload["scenes"]["2-3"]["actual_chars"] == 1300
-        assert payload["progress"]["completed_scene_count"] >= 3
+        assert payload["progress"]["written_scene_count"] == 3
+        assert payload["progress"]["completed_scene_count"] == 1
 
     def test_build_scene_index_writes_scene_summaries(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
@@ -2089,6 +2100,11 @@ class TestScenePipelineRefactor:
             "blocking_issues": [] if status != "fail" else [{"type": "forced_fail"}],
             "warnings": [{"type": "forced_warning"}] if status == "warning" else [],
         }
+        from novel_agent.dependencies import snapshot_dependencies, dependency_digest
+        from novel_agent.storage import text_content_hash
+        inputs = snapshot_dependencies(project_dir, [{"kind": "projection", "selector": "check_policy", "scene_id": scene_id}])
+        report.update(version=2, scope="scene", scene_id=scene_id, source_path=os.path.relpath(report["target_file"], project_dir), source_hash=text_content_hash(report["target_file"]), hash_algorithm="sha256-utf8-text-v1", check_inputs=inputs, check_inputs_digest=dependency_digest(inputs))
+        write_utf8(os.path.join(runtime_dir, "scene_brief_compact.md"), "- Scene ID: " + scene_id + "\n")
         write_utf8(os.path.join(runtime_dir, "check_report.json"), json.dumps(report, ensure_ascii=False))
         return runtime_dir
 
@@ -2210,6 +2226,9 @@ class TestScenePipelineRefactor:
 
     def test_check_scene_output_blocks_missing_obligation_dependency(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        outline_path = os.path.join(project_dir, "05_chapter_outline.md")
+        outline = open(outline_path, encoding="utf-8").read().replace("| 1000 | 1250 | 1500 | 2-2 |", "| 100 | 150 | 2000 | 2-9 |")
+        write_utf8(outline_path, outline)
         scene_path = os.path.join(project_dir, "chapter_2_scene_3.txt")
         write_utf8(scene_path, "主人公は決断した。" * 80)
         runtime_dir = scene_runtime_dir(project_dir, "2-3", "draft")
@@ -2234,6 +2253,9 @@ class TestScenePipelineRefactor:
 
     def test_check_scene_output_adds_anti_ai_warning_without_fail(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
+        outline_path = os.path.join(project_dir, "05_chapter_outline.md")
+        outline = open(outline_path, encoding="utf-8").read().replace("| 1000 | 1250 | 1500 | 2-2 |", "| 100 | 150 | 3000 | 2-2 |")
+        write_utf8(outline_path, outline)
         scene_path = os.path.join(project_dir, "chapter_2_scene_3.txt")
         text = (
             "つまり彼は理由を説明した。なぜならそれは必要だった。"

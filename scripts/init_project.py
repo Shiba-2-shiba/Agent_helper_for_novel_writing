@@ -6,13 +6,15 @@ import sys
 from datetime import datetime, timezone
 
 from prompt_utils import compute_gate_threshold, compute_target_length_profile
+from novel_agent.length_profiles import TARGET_PROFILE_SPECS
+from novel_agent.chapter_scaffold import chapter_directory_name, render_outline_chapters
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BASE_DIR = os.path.dirname(SCRIPT_DIR)
 CANONICAL_OUTLINE_TEMPLATE = "05_chapter_outline.md"
 LEGACY_OUTLINE_TEMPLATE = "05_chapter_outline_100k.md"
-TARGET_TOTAL_CHAR_CHOICES = (30000, 50000, 100000)
+TARGET_TOTAL_CHAR_CHOICES = tuple(TARGET_PROFILE_SPECS)
 
 
 def resolve_new_project_dir(project_name):
@@ -163,14 +165,17 @@ def main():
         type=int,
         choices=TARGET_TOTAL_CHAR_CHOICES,
         required=True,
-        help="Canonical target total chars for the project (30000 / 50000 / 100000)",
+        help="Canonical target total chars for the project ({})".format(" / ".join(map(str, TARGET_TOTAL_CHAR_CHOICES))),
     )
+    parser.add_argument("--chapter-count", type=int, default=None, help="Optional positive chapter count; omitted keeps the legacy five-chapter layout")
     parser.add_argument(
         "--from_ideas",
         action="store_true",
         help="If set, copies generated_ideas.md into the project and transfers the logline to 01_concept_sheet.md",
     )
     args = parser.parse_args()
+    if args.chapter_count is not None and args.chapter_count < 1:
+        parser.error("--chapter-count must be a positive integer")
 
     templates_dir = os.path.join(BASE_DIR, "templates")
     project_dir = resolve_new_project_dir(args.project_name)
@@ -187,14 +192,18 @@ def main():
     print(f" - Created directory: {project_dir}")
 
     for template_name in sorted(os.listdir(templates_dir)):
-        if not template_name.endswith(".md") or template_name == LEGACY_OUTLINE_TEMPLATE:
+        if not template_name.endswith(".md") or template_name in (LEGACY_OUTLINE_TEMPLATE, "chapter_card.md"):
             continue
         src = os.path.join(templates_dir, template_name)
         dst = os.path.join(project_dir, template_name)
         if template_name == CANONICAL_OUTLINE_TEMPLATE:
             with open(src, "r", encoding="utf-8") as handle:
+                template_text = handle.read()
+                if args.chapter_count is not None:
+                    with open(os.path.join(templates_dir, "chapter_card.md"), encoding="utf-8") as card:
+                        template_text = render_outline_chapters(template_text, args.chapter_count, card_template=card.read())
                 rendered = render_outline_template(
-                    handle.read(),
+                    template_text,
                     target_total_chars=target_total_chars,
                     planning_gate_min_chars=planning_gate_min_chars,
                 )
@@ -211,6 +220,8 @@ def main():
         ("chapter_4_climax", "第4章：転（クライマックス）"),
         ("chapter_5_resolution", "第5章：結（解決）"),
     ]
+    if args.chapter_count is not None:
+        chapters = [(chapter_directory_name(i, legacy_layout=False), f"第{i}章") for i in range(1, args.chapter_count + 1)]
     for ch_dir_name, ch_title_ja in chapters:
         ch_dir = os.path.join(project_dir, ch_dir_name)
         os.makedirs(ch_dir)

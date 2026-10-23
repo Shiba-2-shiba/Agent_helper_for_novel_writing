@@ -34,6 +34,8 @@ def write_markdown(summary: Dict, out_path: Path) -> None:
         "# Skill Eval Suite Report",
         "",
         "## Summary",
+        "- Evaluation: deterministic rule-based regression (not an LLM run)",
+        "- Actual agent evaluation: not_run",
         f"- Generated at (UTC): {summary['generated_at_utc']}",
         f"- Overall pass: {summary['overall_pass']}",
         "",
@@ -165,6 +167,8 @@ def main() -> int:
     reg_boundary = load_json(Path(args.regression_boundary_json_out))
 
     summary = {
+        "evaluation_kind": "deterministic_rule_based_skill_regression",
+        "agent_evaluation": {"status": "not_run"},
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "trigger": {
             "pass": bool(trigger["summary"]["overall_pass"]),

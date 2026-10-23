@@ -17,24 +17,12 @@ SCENE_FILENAME_RE = re.compile(
 )
 CANONICAL_OUTLINE_FILENAME = "05_chapter_outline.md"
 LEGACY_OUTLINE_FILENAME = "05_chapter_outline_100k.md"
-TARGET_PROFILE_SPECS = {
-    30000: {
-        "target_length_profile": "novel_30k",
-        "planning_gate_min_chars": 24000,
-    },
-    50000: {
-        "target_length_profile": "novel_50k",
-        "planning_gate_min_chars": 40000,
-    },
-    100000: {
-        "target_length_profile": "novel_100k",
-        "planning_gate_min_chars": 80000,
-    },
-}
-TARGET_TOTAL_CHARS_BY_PROFILE = {
-    spec["target_length_profile"]: total_chars
-    for total_chars, spec in TARGET_PROFILE_SPECS.items()
-}
+from novel_agent.length_profiles import (
+    TARGET_PROFILE_SPECS, TARGET_TOTAL_CHARS_BY_PROFILE,
+    compute_target_length_profile, compute_gate_threshold,
+    _compute_target_total_chars_from_profile, build_target_profile_payload,
+    resolve_target_profile_from_state,
+)
 CHAPTER_DIR_HINTS = {
     1: "chapter_1_introduction",
     2: "chapter_2_rising_action",
@@ -44,8 +32,8 @@ CHAPTER_DIR_HINTS = {
 }
 
 
-class UserFacingError(Exception):
-    """Raised for expected CLI failures that should not print a traceback."""
+from novel_agent.errors import UserFacingError
+from novel_agent.storage import atomic_write_json, atomic_write_text, read_json, validate_schema, project_lock
 
 
 def resolve_project_path(project_arg):
@@ -104,19 +92,11 @@ def read_optional_text(path):
 
 
 def write_text_file(path, content):
-    directory = os.path.dirname(path)
-    if directory:
-        ensure_directory(directory)
-    with open(path, "w", encoding="utf-8") as handle:
-        handle.write(content)
+    atomic_write_text(path, content)
 
 
 def write_json_file(path, payload):
-    directory = os.path.dirname(path)
-    if directory:
-        ensure_directory(directory)
-    with open(path, "w", encoding="utf-8") as handle:
-        json.dump(payload, handle, ensure_ascii=False, indent=2)
+    atomic_write_json(path, payload)
 
 
 def estimate_tokens(text):
@@ -143,38 +123,6 @@ def validate_char_bounds(min_chars, target_chars, max_chars):
     validate_positive_int("max_chars", max_chars)
     if not (min_chars <= target_chars <= max_chars):
         raise UserFacingError("expected min_chars <= target_chars <= max_chars")
-
-
-def compute_target_length_profile(target_total_chars: int) -> str:
-    spec = TARGET_PROFILE_SPECS.get(target_total_chars)
-    if spec is None:
-        raise UserFacingError(f"unsupported target_total_chars: {target_total_chars}")
-    return spec["target_length_profile"]
-
-
-def compute_gate_threshold(target_total_chars: int) -> int:
-    spec = TARGET_PROFILE_SPECS.get(target_total_chars)
-    if spec is None:
-        raise UserFacingError(f"unsupported target_total_chars: {target_total_chars}")
-    return spec["planning_gate_min_chars"]
-
-
-def _compute_target_total_chars_from_profile(target_length_profile: str) -> int:
-    total_chars = TARGET_TOTAL_CHARS_BY_PROFILE.get(target_length_profile)
-    if total_chars is None:
-        raise UserFacingError(f"unsupported target_length_profile: {target_length_profile}")
-    return total_chars
-
-
-def build_target_profile_payload(target_total_chars: int, *, source: str, planning_gate_enabled: bool = True) -> dict:
-    return {
-        "target_total_chars": target_total_chars,
-        "target_length_profile": compute_target_length_profile(target_total_chars),
-        "planning_gate_enabled": bool(planning_gate_enabled),
-        "planning_gate_min_chars": compute_gate_threshold(target_total_chars),
-        "planning_target_total_chars": target_total_chars,
-        "source": source,
-    }
 
 
 def parse_scene_reference(scene_raw):
@@ -220,15 +168,12 @@ def runtime_index_path(project_dir):
 
 def read_runtime_index(project_dir):
     path = runtime_index_path(project_dir)
-    if not os.path.isfile(path):
-        return {"latest_by_mode": {}}
-    try:
-        payload = json.loads(read_text_file(path))
-    except json.JSONDecodeError:
-        return {"latest_by_mode": {}}
-    if not isinstance(payload, dict):
-        return {"latest_by_mode": {}}
+    payload = read_json(path, default_factory=lambda: {"latest_by_mode": {}})
+    validate_schema(payload, path, fields={"latest_by_mode": dict})
     payload.setdefault("latest_by_mode", {})
+    if any(not isinstance(record, dict) for record in payload["latest_by_mode"].values()):
+        from novel_agent.errors import DataCorruptionError
+        raise DataCorruptionError("invalid runtime index at " + path)
     return payload
 
 
@@ -237,7 +182,7 @@ def write_runtime_index(project_dir, payload):
     write_json_file(runtime_index_path(project_dir), payload)
 
 
-def update_runtime_index(project_dir, *, mode, scene_ref, runtime_dir):
+def _update_runtime_index_locked(project_dir, *, mode, scene_ref, runtime_dir):
     payload = read_runtime_index(project_dir)
     payload["latest_by_mode"][mode] = {
         "chapter": scene_ref["chapter"],
@@ -251,23 +196,8 @@ def update_runtime_index(project_dir, *, mode, scene_ref, runtime_dir):
 
 
 def resolve_runtime_dir(project_dir, *, mode="", scene_ref=None, runtime_dir_arg=""):
-    if runtime_dir_arg:
-        return resolve_relative_path(runtime_dir_arg, base_dirs=[project_dir], must_exist=True)
-
-    if scene_ref is not None:
-        candidate = runtime_scene_dir(project_dir, scene_ref, mode or "draft")
-        if os.path.isdir(candidate):
-            return candidate
-
-    payload = read_runtime_index(project_dir)
-    if mode:
-        latest = payload.get("latest_by_mode", {}).get(mode)
-        if latest:
-            candidate = latest.get("runtime_dir", "")
-            if candidate and os.path.isdir(candidate):
-                return candidate
-
-    return runtime_root_dir(project_dir)
+    from novel_agent.runtime_paths import resolve_runtime_dir as resolve
+    return resolve(project_dir, mode=mode, scene_ref=scene_ref, runtime_dir_arg=runtime_dir_arg)
 
 
 def extract_chapter_block(outline_text, chapter_num):
@@ -501,7 +431,7 @@ def update_state_schema_text(text, updates_by_section):
     return "\n".join(lines) + ("\n" if text.endswith("\n") else "")
 
 
-def sync_state_schema(project_dir, updates_by_section):
+def _sync_state_schema_locked(project_dir, updates_by_section):
     path = find_state_schema_path(project_dir)
     if path is None:
         return ""
@@ -531,48 +461,6 @@ def _parse_bool_text(raw_value, default_value=None):
     if cleaned in {"false", "no", "off", "0"}:
         return False
     return default_value
-
-
-def resolve_target_profile_from_state(state_schema_text: str, *, fallback_total_chars: int = 100000) -> dict:
-    target_total_chars = _parse_int_from_text(_extract_state_scalar(state_schema_text, "target_total_chars", "0"))
-    if target_total_chars:
-        planning_gate_enabled = _parse_bool_text(
-            _extract_state_scalar(state_schema_text, "planning_gate_enabled", ""),
-            default_value=True,
-        )
-        return build_target_profile_payload(
-            target_total_chars,
-            source="canonical_state",
-            planning_gate_enabled=planning_gate_enabled,
-        )
-
-    target_length_profile = _extract_state_scalar(state_schema_text, "target_length_profile", "")
-    if target_length_profile:
-        planning_gate_enabled = _parse_bool_text(
-            _extract_state_scalar(state_schema_text, "planning_gate_enabled", ""),
-            default_value=True,
-        )
-        return build_target_profile_payload(
-            _compute_target_total_chars_from_profile(target_length_profile),
-            source="canonical_state",
-            planning_gate_enabled=planning_gate_enabled,
-        )
-
-    planning_target_total_chars = _parse_int_from_text(
-        _extract_state_scalar(state_schema_text, "planning_target_total_chars", "0")
-    )
-    if planning_target_total_chars in TARGET_PROFILE_SPECS:
-        return build_target_profile_payload(planning_target_total_chars, source="legacy_planning_target")
-
-    total_chars = _parse_int_from_text(_extract_state_scalar(state_schema_text, "total_chars", "0"))
-    if total_chars in TARGET_PROFILE_SPECS:
-        return build_target_profile_payload(total_chars, source="legacy_total_chars")
-
-    length_mode = _extract_state_scalar(state_schema_text, "length_mode", "")
-    if length_mode == "long_form_100k":
-        return build_target_profile_payload(100000, source="legacy_length_mode")
-
-    return build_target_profile_payload(fallback_total_chars, source="fallback")
 
 
 def resolve_outline_path(project_dir: str, *, require_exists: bool = False) -> str:
@@ -733,7 +621,8 @@ def build_excerpt(text, max_chars=220):
 
 def _collect_scene_metadata(project_dir):
     found = {}
-    for root, _, files in os.walk(project_dir):
+    for root, dirs, files in os.walk(project_dir):
+        dirs[:] = [name for name in dirs if name not in {".git", "runtime", "story_memory", "__pycache__"}]
         for name in files:
             match = SCENE_FILENAME_RE.match(name)
             if not match:
@@ -743,7 +632,9 @@ def _collect_scene_metadata(project_dir):
             path = os.path.join(root, name)
             key = (chapter_num, scene_num)
             current = found.get(key)
-            if current is None or len(path) < len(current["path"]):
+            if current is not None:
+                raise UserFacingError("ambiguous duplicate scene {}-{}: {} and {}".format(chapter_num, scene_num, current["path"], path))
+            if current is None:
                 found[key] = {
                     "chapter": chapter_num,
                     "scene": scene_num,
@@ -777,7 +668,7 @@ def count_completed_scene_files(project_dir):
     return len(_collect_scene_metadata(project_dir))
 
 
-def update_scene_ledger_status(project_dir, scene_ref, new_status):
+def _update_scene_ledger_status_locked(project_dir, scene_ref, new_status):
     outline_path = resolve_outline_path(project_dir, require_exists=False)
     if not os.path.isfile(outline_path):
         return ""
@@ -908,21 +799,15 @@ def find_scene_file(project_dir, scene_ref):
 
 
 def find_chapter_directory(project_dir, chapter_num):
-    hint = CHAPTER_DIR_HINTS.get(chapter_num, "")
-    if hint:
-        hinted_path = os.path.join(project_dir, hint)
-        if os.path.isdir(hinted_path):
-            return hinted_path
-
     candidates = []
-    chapter_prefix = f"chapter_{chapter_num}_"
+    pattern = re.compile(rf"^chapter_{chapter_num}(?:_|$)")
     for name in os.listdir(project_dir):
         candidate = os.path.join(project_dir, name)
-        if os.path.isdir(candidate) and name.startswith(chapter_prefix):
+        if os.path.isdir(candidate) and pattern.match(name):
             candidates.append(candidate)
-    if not candidates:
-        return ""
-    return sorted(candidates, key=lambda path: (len(path), path.lower()))[0]
+    if len(candidates) > 1:
+        raise UserFacingError(f"ambiguous chapter directory for chapter {chapter_num}: {', '.join(sorted(candidates))}")
+    return candidates[0] if candidates else ""
 
 
 def suggest_scene_output_path(project_dir, scene_ref):
@@ -939,10 +824,9 @@ def suggest_scene_output_path(project_dir, scene_ref):
         for item in chapter_items:
             directory = os.path.dirname(item["path"])
             dir_counts[directory] = dir_counts.get(directory, 0) + 1
-        preferred_dir = sorted(
-            dir_counts.items(),
-            key=lambda pair: (-pair[1], len(pair[0]), pair[0].lower()),
-        )[0][0]
+        if len(dir_counts) > 1:
+            raise UserFacingError(f"ambiguous existing prose directories for chapter {scene_ref['chapter']}")
+        preferred_dir = next(iter(dir_counts))
     if not preferred_dir:
         preferred_dir = find_chapter_directory(project_dir, scene_ref["chapter"]) or project_dir
 
@@ -976,6 +860,13 @@ def find_previous_scene_pack(project_dir, current_scene_ref, explicit_previous_p
         previous_path = require_existing_file(explicit_previous_path, "previous_text")
         summary_item = None
         explicit_key = _match_scene_tuple(previous_path)
+        if explicit_key is None:
+            raise UserFacingError("previous_text must resolve to a canonical project scene before the target; use non-scene text as a separately labeled input")
+        if explicit_key >= current_key:
+            raise UserFacingError("previous_text must be strictly before the target scene; current/future prose is not past context")
+        candidates = [item for item in all_scenes if (item["chapter"], item["scene"]) == explicit_key]
+        if len(candidates) != 1 or os.path.realpath(candidates[0]["path"]) != os.path.realpath(previous_path):
+            raise UserFacingError("previous_text must uniquely match a canonical scene inside this project")
         if explicit_key is not None:
             for index, item in enumerate(all_scenes):
                 if (item["chapter"], item["scene"]) == explicit_key and index > 0:
@@ -1134,3 +1025,18 @@ def extract_forbidden_terms(style_contract_text):
             if term:
                 terms.append(term)
     return terms
+
+
+def update_runtime_index(project_dir, *, mode, scene_ref, runtime_dir):
+    with project_lock(project_dir):
+        return _update_runtime_index_locked(project_dir, mode=mode, scene_ref=scene_ref, runtime_dir=runtime_dir)
+
+
+def sync_state_schema(project_dir, updates_by_section):
+    with project_lock(project_dir):
+        return _sync_state_schema_locked(project_dir, updates_by_section)
+
+
+def update_scene_ledger_status(project_dir, scene_ref, new_status):
+    with project_lock(project_dir):
+        return _update_scene_ledger_status_locked(project_dir, scene_ref, new_status)

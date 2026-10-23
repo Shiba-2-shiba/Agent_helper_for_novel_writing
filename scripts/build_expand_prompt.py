@@ -9,6 +9,12 @@ from novel_agent.ledgers import (
     record_quality_budget_action,
 )
 from novel_agent.trace import append_trace_event
+from novel_agent.memory_context import assemble_prompt, memory_prompt_sections
+from novel_agent.storage import atomic_write_json, read_json
+from novel_agent.errors import DataCorruptionError
+from novel_agent.dependencies import snapshot_dependencies, verify_dependencies
+from novel_agent.approvals import validate_check_identity
+from novel_agent.runtime_paths import require_runtime_current
 from prompt_utils import (
     RUNTIME_PROMPT_WARN_LIMIT,
     UserFacingError,
@@ -118,21 +124,37 @@ def main():
 
     draft_path = resolve_relative_path(args.draft_text, base_dirs=[project_dir], must_exist=True)
     scene_ref = infer_scene_ref_from_path(draft_path)
-    runtime_dir = resolve_runtime_dir(
-        project_dir,
-        mode="draft",
-        scene_ref=scene_ref,
-        runtime_dir_arg=args.runtime_dir,
+    runtime_dir = (
+        resolve_runtime_dir(project_dir, mode="draft", scene_ref=scene_ref, runtime_dir_arg=args.runtime_dir)
+        if scene_ref or args.runtime_dir else os.path.join(project_dir, "runtime")
     )
+    if scene_ref:
+        require_runtime_current(project_dir, runtime_dir)
     report_path = (
         resolve_relative_path(args.check_report, base_dirs=[project_dir, runtime_dir], must_exist=True)
         if args.check_report
         else require_existing_file(os.path.join(runtime_dir, "check_report.json"), "runtime/check_report.json")
     )
-    style_path = require_existing_file(os.path.join(runtime_dir, "style_contract_compact.md"), "runtime/style_contract_compact.md")
+    style_path = os.path.join(runtime_dir, "style_contract_compact.md")
 
+    selection_path = os.path.join(runtime_dir, "context_selection.json")
+    memory_path = os.path.join(runtime_dir, "story_memory_pack.md")
+    related_path = os.path.join(runtime_dir, "related_context_pack.md")
+    input_specs = [{"kind": "file", "path": draft_path}, {"kind": "artifact", "path": report_path},
+                   {"kind": "artifact", "path": style_path}]
+    input_specs.extend({"kind": "artifact" if os.path.isfile(path) else "file", "path": path}
+                       for path in (memory_path, related_path))
+    if os.path.isfile(selection_path):
+        input_specs.append({"kind": "projection", "selector": "memory_selection", "path": selection_path})
+    try:
+        inputs = snapshot_dependencies(project_dir, input_specs)
+    except DataCorruptionError as exc:
+        if report_path in str(exc):
+            raise UserFacingError("check_report.json is invalid: %s" % exc)
+        raise
     draft_text = read_text_file(draft_path).strip()
-    style_contract = read_text_file(style_path).strip()
+    from prompt_utils import build_style_contract
+    style_contract = read_text_file(style_path).strip() if os.path.isfile(style_path) else build_style_contract(project_dir)[0]
     try:
         report = json.loads(read_text_file(report_path))
     except json.JSONDecodeError:
@@ -141,6 +163,8 @@ def main():
     for key in ("actual_chars", "min_chars", "needs_expand"):
         if key not in report:
             raise UserFacingError("check_report.json is missing required keys")
+
+    validate_check_identity(project_dir, scene_ref, draft_path, report)
 
     budget_decision = evaluate_quality_budget_for_expand(project_dir, scene_ref, report)
     if not budget_decision["allowed"] and not args.force:
@@ -185,6 +209,24 @@ def main():
             "- `TARGET: after P2` なのに `ANCHOR:` が `P3` の抜粋になっている",
         ]
     )
+    context_selection = read_json(selection_path, default_factory=dict)
+    sections = [{"name": "required_expansion_constraints_and_target", "text": prompt,
+                 "required": True, "priority": 0, "source_ids": []}]
+    if context_selection.get("memory"):
+        sections.extend(memory_prompt_sections(context_selection["memory"]))
+    elif os.path.isfile(memory_path):
+        sections.append({"name": "story_memory", "text": read_text_file(memory_path),
+                         "required": False, "priority": 2, "source_ids": []})
+    if os.path.isfile(related_path):
+        sections.append({"name": "related_context", "text": read_text_file(related_path),
+                         "required": False, "priority": 9, "source_ids": ["related_context_pack.md"]})
+    assembled = assemble_prompt(sections)
+    prompt = assembled["prompt"]
+    if scene_ref and verify_dependencies(project_dir, inputs):
+        raise UserFacingError("runtime changed during expansion prompt generation; prepare again")
+    context_selection["expand_prompt"] = {key: value for key, value in assembled.items() if key != "prompt"}
+    if os.path.isfile(selection_path):
+        atomic_write_json(selection_path, context_selection)
     estimated_tokens = estimate_tokens(prompt)
     part_estimates = {
         "expand_instruction": estimate_tokens(instruction_text),
@@ -196,7 +238,9 @@ def main():
     instruction_path = os.path.join(runtime_dir, "expand_instruction.md")
     prompt_path = os.path.join(runtime_dir, "expand_prompt.txt")
     write_text_file(instruction_path, instruction_text + "\n")
-    write_text_file(prompt_path, prompt + "\n")
+    write_text_file(prompt_path, prompt)
+    from novel_agent.ledgers import register_artifacts
+    register_artifacts(project_dir, [{"artifact_id": "expand", "artifact_type": "expand", "path": path, "dependencies": inputs} for path in (instruction_path, prompt_path)])
     record_quality_budget_action(
         project_dir,
         scene_ref,

@@ -2,6 +2,7 @@
 
 > このテンプレートは、作品全体の章役割と scene inventory を管理する canonical outline です。
 > planning gate を使う案件では、執筆前にこのファイルで計画を確認してください。
+> 章数を明示して初期化した場合は、以下のサンプル章を空の Chapter Card に置換します。部は任意の `part_id` で管理できます。
 
 ---
 

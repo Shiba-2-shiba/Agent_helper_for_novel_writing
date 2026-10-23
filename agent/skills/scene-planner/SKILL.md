@@ -115,3 +115,7 @@ description: Plan the next chapter or the next one to three scenes before drafti
 - 監査や改稿の責務を混ぜない
 - 次に書く対象を複数候補のまま終えない
 
+
+# Shared Long-Novel Contract
+
+開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。

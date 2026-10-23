@@ -7,8 +7,12 @@ import sys
 from datetime import datetime, timezone
 
 from novel_agent.story_state import initialize_story_state
+from novel_agent.length_profiles import TARGET_PROFILE_SPECS
+from novel_agent.project_migration import plan_target_migration, apply_target_migration, rollback_target_migration
+from novel_agent.storage import read_json
 from prompt_utils import (
     collect_scene_metadata,
+    load_planning_metadata,
     collect_missing_dependencies,
     UserFacingError,
     count_completed_scene_files,
@@ -75,6 +79,30 @@ def sync_outline_statuses_for_existing_scenes(project_dir):
     return updated
 
 
+def report_target_result(project_dir, result):
+    """Verify after the transaction releases its lock; never hide a commit."""
+    from novel_agent.health import build_health_report
+    verification = {"status": "pass"}
+    try:
+        metadata = load_planning_metadata(project_dir)
+        verification["planning"] = {
+            name: metadata[name] for name in (
+                "target_total_chars", "target_length_profile", "planning_target_total_chars",
+                "planning_gate_min_chars", "planning_gate_status",
+            )
+        }
+        verification["health"] = build_health_report(project_dir)
+        verification["status"] = verification["health"]["status"]
+    except Exception as exc:
+        # The migration may already be committed. Report that fact separately
+        # from verification failure rather than encouraging an unsafe retry.
+        verification.update(status="fail", error=str(exc))
+    payload = dict(result, verification=verification)
+    print(json.dumps(payload, ensure_ascii=False, indent=2))
+    if verification["status"] == "fail":
+        raise SystemExit(2)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Migrate an existing project state to the refactored runtime/state conventions.")
     parser.add_argument("--project", required=True, help="Path to the project directory")
@@ -84,11 +112,43 @@ def main():
         choices=["migration", "late_update"],
         help="How to label an already-present target_total_chars when adding confirmation metadata",
     )
+    operation = parser.add_mutually_exclusive_group()
+    operation.add_argument("--target-total-chars", type=int, choices=tuple(TARGET_PROFILE_SPECS))
+    operation.add_argument("--apply-plan", help="Apply a previously reviewed target migration plan")
+    operation.add_argument("--rollback", help="Roll back a target migration by its migration ID")
+    parser.add_argument("--dry-run", action="store_true", help="Save a target migration plan without changing source files")
+    parser.add_argument("--gate-policy", choices=("profile", "preserve"))
+    parser.add_argument("--expected-plan-hash", help="Reviewed plan_hash required for --apply-plan")
     args = parser.parse_args()
+    if args.target_total_chars is not None and not args.dry_run:
+        parser.error("--target-total-chars requires --dry-run; review the saved plan before --apply-plan")
+    if (args.dry_run or args.gate_policy) and args.target_total_chars is None:
+        parser.error("--dry-run and --gate-policy require --target-total-chars")
+    if args.apply_plan and not args.expected_plan_hash:
+        parser.error("--apply-plan requires --expected-plan-hash")
+    if args.expected_plan_hash and not args.apply_plan:
+        parser.error("--expected-plan-hash requires --apply-plan")
 
     project_dir = resolve_project_path(args.project)
     if not os.path.isdir(project_dir):
         raise UserFacingError(f"project directory not found: {project_dir}")
+
+    if args.target_total_chars is not None:
+        result = plan_target_migration(project_dir, target_total_chars=args.target_total_chars, gate_policy=args.gate_policy)
+        result["plan_path"] = os.path.join(project_dir, "runtime", "migrations", result["migration_id"], "plan.json")
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        if result["conflicts"]:
+            sys.exit(1)
+        return
+    if args.apply_plan:
+        plan = read_json(args.apply_plan, default_factory=dict)
+        result = apply_target_migration(project_dir, plan, expected_plan_hash=args.expected_plan_hash)
+        report_target_result(project_dir, result)
+        return
+    if args.rollback:
+        result = rollback_target_migration(project_dir, args.rollback)
+        report_target_result(project_dir, result)
+        return
 
     state_path = find_state_schema_path(project_dir)
     if state_path is None:
@@ -117,9 +177,9 @@ def main():
             "target_confirmed_by": existing_by or "migration",
         },
         "progress": {
-            "completed_scene_count": count_completed_scene_files(project_dir),
+            "written_scene_count": count_completed_scene_files(project_dir),
             "total_chars_written": count_total_written_chars(project_dir),
-            "last_completed_scene": latest_scene_id,
+
             "current_scene": latest_scene_id,
             "current_chapter": latest_scene["chapter"] if latest_scene else 0,
         },
@@ -179,7 +239,8 @@ def main():
             "output_path": suggest_scene_output_path(project_dir, dependency_ref),
             "reason": f"{missing_dependencies[0]['scene_id']} depends_on {missing_dependencies[0]['depends_on']}",
         }
-    initialize_story_state(project_dir)
+    from novel_agent.scene_status import collect_project_status, sync_status_projections
+    sync_status_projections(project_dir, collect_project_status(project_dir))
 
     report = {
         "project": project_dir,

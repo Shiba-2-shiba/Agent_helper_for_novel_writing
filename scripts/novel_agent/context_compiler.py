@@ -135,6 +135,12 @@ def _collect_scene_blocks(project_dir):
 
 def _collect_runtime_blocks(project_dir, mode, scene_ref, runtime_dir_arg=""):
     blocks = []
+    from prompt_utils import runtime_scene_dir, read_optional_text
+    candidate = runtime_scene_dir(project_dir, scene_ref, mode)
+    if not runtime_dir_arg and not os.path.isdir(candidate):
+        legacy_brief = read_optional_text(os.path.join(runtime_root_dir(project_dir), "scene_brief_compact.md"))
+        if not re.search(r"Scene ID:\s*" + re.escape(scene_ref["canonical_id"]) + r"(?:\s|$)", legacy_brief):
+            return blocks
     runtime_dir = resolve_runtime_dir(project_dir, mode=mode, scene_ref=scene_ref, runtime_dir_arg=runtime_dir_arg)
     if not os.path.isdir(runtime_dir):
         return blocks
@@ -257,6 +263,10 @@ def write_context_outputs(project_dir, *, chapter, scene, mode, blocks, grep_pat
         "blocks": [block.to_index_entry() for block in blocks],
     }
     write_json_file(index_path, payload)
+    from novel_agent.dependencies import snapshot_dependencies
+    from novel_agent.ledgers import register_artifacts
+    dependencies = snapshot_dependencies(project_dir, [{"kind": "file", "path": path} for path in sorted({block.source_path for block in blocks})])
+    register_artifacts(project_dir, [{"artifact_id": "context", "artifact_type": "context", "path": path, "dependencies": dependencies} for path in (full_path, min_path, index_path, *([view_path] if grep_pattern else []))])
     return {
         "context_dir": context_dir,
         "full_path": full_path,

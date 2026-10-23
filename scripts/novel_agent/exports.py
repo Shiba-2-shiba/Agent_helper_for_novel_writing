@@ -1,7 +1,8 @@
 import os
 import re
 
-from novel_agent.approvals import refresh_approval_statuses
+from novel_agent.approvals import _refresh_approval_statuses_locked
+from novel_agent.storage import project_lock
 from prompt_utils import (
     UserFacingError,
     collect_scene_metadata,
@@ -15,7 +16,7 @@ from prompt_utils import (
 
 
 def _approved_records(project_dir):
-    payload = refresh_approval_statuses(project_dir)
+    payload = _refresh_approval_statuses_locked(project_dir)
     return {
         scene_id: record
         for scene_id, record in payload.get("scenes", {}).items()
@@ -43,10 +44,15 @@ def _fallback_scene_order(project_dir):
 
 
 def export_manuscript(project_dir, *, include_warnings=False, output_path=""):
+    with project_lock(project_dir):
+        return _export_manuscript_locked(project_dir, include_warnings=include_warnings, output_path=output_path)
+
+
+def _export_manuscript_locked(project_dir, *, include_warnings=False, output_path=""):
     approved = _approved_records(project_dir)
     stale = [
         scene_id
-        for scene_id, record in refresh_approval_statuses(project_dir).get("scenes", {}).items()
+        for scene_id, record in _refresh_approval_statuses_locked(project_dir).get("scenes", {}).items()
         if isinstance(record, dict) and record.get("status") == "stale"
     ]
     if stale:
