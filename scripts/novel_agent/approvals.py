@@ -143,6 +143,26 @@ def validate_approval_current(project_dir, record):
         if not canonical or os.path.realpath(canonical) != os.path.realpath(path):
             raise UserFacingError("approved scene path changed")
         validate_check_identity(project_dir, scene_ref, path, {**record, "scope": "scene"})
+        # Historical approvals without this extension keep their original
+        # mechanical guarantee; never run the new-approval gate on them.
+        if "dialogue_review" in record or "dialogue_review_digest" in record:
+            if "dialogue_review_contract" not in record:
+                raise UserFacingError("approval dialogue review contract is missing")
+            from novel_agent.dialogue_review import validate_dialogue_review
+            review = record.get("dialogue_review")
+            if not isinstance(review, dict) or record.get("dialogue_review_digest") != review.get("review_id"):
+                raise UserFacingError("approval dialogue review digest mismatch")
+            validate_dialogue_review(read_text_file(path), {**record, "scope": "scene"}, review,
+                                     baseline_record=record.get("dialogue_review_baseline"))
+            if any(d["judgment"] != "keep" for d in review["decisions"] + review["comparisons"]):
+                raise UserFacingError("approved dialogue review contains unresolved judgments")
+        elif "dialogue_review_contract" in record:
+            # No-candidate check snapshots may be copied by old callers. They
+            # contain advisory extraction, not a missing mandatory review.
+            from novel_agent.dialogue_review import build_dialogue_contract
+            expected = build_dialogue_contract(read_text_file(path), scene_bound=True)
+            if record["dialogue_review_contract"] != expected or expected["review_required"]:
+                raise UserFacingError("approval dialogue review digest mismatch")
     except UserFacingError as exc:
         result.update(status="stale", reasons=[str(exc)])
     return result
@@ -178,12 +198,26 @@ def approve_scene(project_dir, scene_raw, *, allow_warnings=False, runtime_dir_a
             raise UserFacingError("scene has warning check_report status; rerun with --allow-warnings to approve")
         if status not in {"pass", "warning"}:
             raise UserFacingError("scene check_report status is not approvable: " + (status or "unknown"))
+        from novel_agent.dialogue_review import (
+            require_dialogue_review, review_baseline_for_record, build_dialogue_contract,
+        )
+        review = require_dialogue_review(project_dir, scene_ref, scene_path, report)
         payload = read_approval_ledger(project_dir)
         scene_id = scene_ref["canonical_id"]
         record = {key: report[key] for key in ("version", "scene_id", "source_path", "source_hash", "hash_algorithm", "check_inputs", "check_inputs_digest")}
         record.update(status="approved", approved_at=utc_now(), **attribution,
                       scene_path=_relative(scene_path, project_dir), check_report_path=_relative(report_path, project_dir),
                       check_status=status, content_hash=report["source_hash"], notes=notes)
+        if review is not None:
+            record["dialogue_review"] = review
+            record["dialogue_review_digest"] = review["review_id"]
+            record["dialogue_review_contract"] = build_dialogue_contract(read_text_file(scene_path), scene_bound=True)
+            baseline = review_baseline_for_record(project_dir, scene_id, review)
+            if baseline is not None:
+                record["dialogue_review_baseline"] = baseline
+        # The repository lock does not stop an external editor. Revalidate
+        # immediately before the only approval write.
+        validate_check_identity(project_dir, scene_ref, scene_path, report)
         payload["scenes"][scene_id] = record
         write_approval_ledger(project_dir, payload)
         _sync_status_locked(project_dir)

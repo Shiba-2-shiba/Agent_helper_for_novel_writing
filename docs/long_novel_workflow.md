@@ -44,6 +44,15 @@ python scripts/check_scene_output.py --project my_novel --text chapter_2_scene_3
 
 `expand_response.txt` はエージェントがプロンプトに従って作成する差分。見出し混入や上限超過等を無理に増補しない。修復予算の超過を自動で `--force` により回避しない。
 
+checkの `dialogue_review_contract.review_required` がtrueなら、`docs/dialogue_context.md` の本文に結び付いた会話レビューを先に行う。候補数は欠陥数ではない。情報だけの問答を圧縮する判断と、相手の印象が返し方を変える選択的な受け止めを分け、keepの理由も具体的に記録する。
+
+```sh
+python scripts/review_scene_dialogue.py --project my_novel --scene 2-3 --output review-input.json
+python scripts/review_scene_dialogue.py --project my_novel --scene 2-3 --input review-input.json --reviewer-type agent --reviewer-id codex
+```
+
+ひな型の空欄は本文を確認して埋める。revise/uncertainは承認を止め、改稿後は再checkと正確なbefore/after比較を行う。候補を0件にしても未解決の比較は消えない。`--allow-warnings` はこのレビューを免除しない。旧承認の歴史的な有効性には遡及適用せず、新規approveは旧checkでも正本から再抽出する。
+
 内容をレビューし、明示的に承認する場合だけ次を実行する。
 
 ```sh
@@ -87,9 +96,11 @@ python scripts/sync_project_health.py --project my_novel --json
 ## 書き出しと復旧
 
 ```sh
-python scripts/export_manuscript.py --project my_novel
+python scripts/export_manuscript.py --project my_novel --require-complete
 ```
 
-対象は承認済み本文。warningを採用した本文の書き出しは `--include-warnings` を明示する。stale承認は先に解決する。未承認のシーンを黙って完成原稿として数えない。
+完成原稿の書き出しは `--require-complete` で予定された全sceneを要求する。省略すると従来互換の部分exportであり、omitted_scenesと理由を確認し、完成とは扱わない。対象は承認済み本文。warningを採用した本文の書き出しは `--include-warnings` を明示する。stale承認は先に解決する。未承認のシーンを黙って完成原稿として数えない。
 
 壊れた台帳は空の記録として再生成しない。バックアップ・JSONの内容・エラーに示されたパスを確認する。ロック残存時は他の処理が実行中でないことを確認し、人間が復旧方針を判断する。healthの派生物再生成と、採用済み記憶の書換えは別操作である。
+
+healthがfailならJSON報告を保存したうえで非0終了する。pipelineも先へ進まない。続き物の仮フックや部分exportの扱いは `docs/trial_cli_diagnostics.md` を参照する。

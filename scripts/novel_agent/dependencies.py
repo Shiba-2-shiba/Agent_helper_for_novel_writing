@@ -240,7 +240,7 @@ def _split_values(raw):
     return [part.strip() for part in str(raw or "").replace(" / ", "/").replace("、", "/").split("/") if part.strip() and part.strip() != "-"]
 
 
-def current_check_policy(project_dir, scene_id):
+def current_check_policy(project_dir, scene_id, *, participants=None, pov_character_id=None, _legacy=False):
     """Recompute effective checking conditions from outline/state/style originals.
 
     ``style_contract`` is compact text, ``length_band`` has scene_type/min/target/
@@ -268,7 +268,7 @@ def current_check_policy(project_dir, scene_id):
     members = _scene_members(project_dir, only={_scene_key(value) for value in dependencies}) if dependencies else []
     voice_source, voice_text = _source(project_dir, ["dialogue_voice.json"])
     sources = [outline_source, state_source, global_source] + ([voice_source] if voice_source["exists"] else [])
-    return {**({"dialogue_voice_hash": _digest(voice_text)} if voice_source["exists"] else {}),
+    return {**({"dialogue_voice_hash": _voice_hash(project_dir, scene_id, voice_text, legacy=_legacy, participants=participants, pov_character_id=pov_character_id)} if voice_source["exists"] else {}),
             "scene_id": scene_id, "length_band": band,
             "style_contract": _style_contract(global_notes, state, band),
             "state_style_contract": _state_sections(state).get("style_contract", ""),
@@ -308,7 +308,15 @@ def _planning_scalars(state):
     return result
 
 
-def _projection(project_dir, selector, scene_id, path=None):
+def _voice_hash(project_dir, scene_id, voice_text, *, legacy=False, participants=None, pov_character_id=None):
+    if legacy:
+        return _digest(voice_text)
+    from novel_agent.dialogue_context import dialogue_dependency_value
+    return _digest(dialogue_dependency_value(project_dir, scene_id=scene_id,
+                   participants=participants, pov_character_id=pov_character_id))
+
+
+def _projection(project_dir, selector, scene_id, path=None, *, legacy=True, participants=None, pov_character_id=None):
     if selector == "dialogue_selection":
         absolute, relative = _path(project_dir, path)
         payload = read_json(absolute, default_factory=dict)
@@ -324,7 +332,7 @@ def _projection(project_dir, selector, scene_id, path=None):
                                else ("version", "config", "memory"))},
                 "source_paths": [relative]}
     if selector == "check_policy":
-        return current_check_policy(project_dir, scene_id)
+        return current_check_policy(project_dir, scene_id, participants=participants, pov_character_id=pov_character_id, _legacy=legacy)
     state_source, state = _source(project_dir, _STATE_PATHS)
     sections = _state_sections(state)
     if selector == "resume_progress":
@@ -335,7 +343,7 @@ def _projection(project_dir, selector, scene_id, path=None):
     outline_source, outline = _source(project_dir, _OUTLINE_PATHS)
     voice_source, voice_text = _source(project_dir, ["dialogue_voice.json"])
     sources = [state_source, global_source, session_source, outline_source] + ([voice_source] if voice_source["exists"] else [])
-    return {**({"dialogue_voice_hash": _digest(voice_text)} if voice_source["exists"] else {}),
+    return {**({"dialogue_voice_hash": _voice_hash(project_dir, scene_id, voice_text, legacy=legacy, participants=participants, pov_character_id=pov_character_id)} if voice_source["exists"] else {}),
             "outline": _outline_policy(outline), "planning": _planning_scalars(state),
             "state": {name: sections.get(name, "") for name in ("targets", "profile", "style_contract", "story_constraints")},
             "global_notes": global_notes, "session_notes": session_notes,
@@ -353,6 +361,7 @@ class _Operation:
         self.artifacts = None
         self.snapshots = {}
         self.digests = {}
+        self.fallbacks = {}
 
     def artifact_index(self, project_dir):
         if self.artifacts is None:
@@ -377,14 +386,18 @@ class _Operation:
     def digest(self, inputs):
         key = id(inputs)
         if key not in self.digests:
-            self.digests[key] = dependency_digest(inputs)
-        return self.digests[key]
+            # Retain inputs: compact snapshots no longer keep fallback lists
+            # alive, so id-only entries can alias a later decoded list.
+            self.digests[key] = (inputs, dependency_digest(inputs))
+        return self.digests[key][1]
 
 
 def _artifact_dependencies(project_dir, relative, absolute, operation):
     payload = operation.artifact_index(project_dir).get(relative)
     if payload is None and relative.endswith(".json") and os.path.isfile(absolute):
-        payload = read_json(absolute, default_factory=dict)
+        if relative not in operation.fallbacks:
+            operation.fallbacks[relative] = read_json(absolute, default_factory=dict)
+        payload = operation.fallbacks[relative]
     if payload is None:
         return None, None
     inputs = payload.get("dependencies", payload.get("inputs", payload.get("check_inputs")))
@@ -396,7 +409,7 @@ def _artifact_dependencies(project_dir, relative, absolute, operation):
     return inputs, digest
 
 
-def _snapshot_one(project_dir, spec, operation=None):
+def _snapshot_one(project_dir, spec, operation=None, *, legacy=False):
     operation = operation or _Operation()
     if not isinstance(spec, dict):
         raise UserFacingError("dependency spec must be an object")
@@ -407,7 +420,8 @@ def _snapshot_one(project_dir, spec, operation=None):
     absolute, relative = _path(project_dir, spec.get("path", default_path))
     # Include every selector/scope field, but not historical snapshot values.
     cache_key = _canonical_json([kind, relative, spec.get("scope", "prior"),
-                           spec.get("selector"), spec.get("scene_id"), spec.get("target_scene_id")])
+                           spec.get("selector"), spec.get("scene_id"), spec.get("target_scene_id"), legacy,
+                           spec.get("projection_version"), spec.get("participants"), spec.get("pov_character_id")])
     if cache_key in operation.snapshots:
         return operation.snapshots[cache_key]
     result = {"kind": kind, "path": relative}
@@ -417,7 +431,11 @@ def _snapshot_one(project_dir, spec, operation=None):
         result.update({"exists": os.path.isfile(absolute), "content_hash": text_content_hash(absolute), "hash_algorithm": _HASH_ALGORITHM})
     if kind == "artifact":
         inputs, digest = _artifact_dependencies(project_dir, relative, absolute, operation)
-        result.update({"dependency_digest": digest, "dependencies": inputs})
+        result.update({"dependency_digest": digest})
+        if legacy:
+            result["dependencies"] = inputs
+        else:
+            result["guard_version"] = 2
     elif kind == "scene_set":
         scope = spec.get("scope", "prior")
         if scope == "all":
@@ -437,8 +455,20 @@ def _snapshot_one(project_dir, spec, operation=None):
         result["selector"] = selector
         if scene_id:
             result["scene_id"] = _scene_id(_scene_key(scene_id))
-        value = _projection(project_dir, selector, scene_id, path=relative)
-        result.update({"value": value, "source_paths": value["source_paths"], "projection_hash": _digest(value)})
+        projection_version = 1 if legacy else spec.get("projection_version", 2)
+        if type(projection_version) is not int or projection_version not in (1, 2):
+            raise UserFacingError("unsupported projection version: {}".format(projection_version))
+        for field in ("participants", "pov_character_id"):
+            if field in spec:
+                result[field] = spec[field]
+        value = _projection(project_dir, selector, scene_id, path=relative,
+                            legacy=projection_version == 1, participants=spec.get("participants"),
+                            pov_character_id=spec.get("pov_character_id"))
+        result.update({"source_paths": value["source_paths"], "projection_hash": _digest(value)})
+        if legacy:
+            result["value"] = value
+        else:
+            result.update({"guard_version": 2, "projection_version": projection_version})
     operation.snapshots[cache_key] = result
     return result
 
@@ -455,6 +485,61 @@ def snapshot_dependencies(project_dir, specs):
     return [unique[key] for key in sorted(unique)]
 
 
+
+def compact_dependencies(records):
+    """Remove redundant source values without resnapshotting or blessing changes.
+
+    Legacy projections keep version-1 projection semantics. Artifact references
+    retain the exact historical upstream digest and are verified via its ledger.
+    """
+    if not isinstance(records, list):
+        raise UserFacingError("dependency records must be a list")
+    result = []
+    for record in records:
+        if not isinstance(record, dict):
+            raise UserFacingError("dependency record must be an object")
+        item = dict(record)
+        version = item.get("guard_version", 1)
+        if type(version) is not int or version not in (1, 2):
+            raise DataCorruptionError("unsupported dependency guard version")
+        if version == 1 and ("guard_version" in item or "projection_version" in item):
+            raise DataCorruptionError("noncanonical legacy dependency version")
+        if item.get("kind") == "projection":
+            projection_version = item.get("projection_version", 1 if version == 1 else 2)
+            if type(projection_version) is not int or projection_version not in (1, 2):
+                raise DataCorruptionError("unsupported projection version")
+            if version == 2 and "value" in item:
+                raise DataCorruptionError("unexpected value in compact projection")
+            if "value" in item and _digest(item["value"]) != item.get("projection_hash"):
+                raise DataCorruptionError("invalid legacy projection hash")
+            item.pop("value", None)
+            item.setdefault("projection_version", 1 if "guard_version" not in item else 2)
+            item["guard_version"] = 2
+        elif item.get("kind") == "artifact":
+            if version == 2 and "dependencies" in item:
+                raise DataCorruptionError("unexpected dependencies in compact artifact")
+            inputs = item.pop("dependencies", None)
+            if inputs is not None and dependency_digest(inputs) != item.get("dependency_digest"):
+                raise DataCorruptionError("invalid legacy artifact dependency digest")
+            item["guard_version"] = 2
+        result.append(item)
+    return result
+
+
+def snapshot_check_policy(project_dir, scene_id, *, participants=None, pov_character_id=None):
+    """Capture the effective policy and its compact guard from the same read."""
+    scene_id = _scene_id(_scene_key(scene_id))
+    value = current_check_policy(project_dir, scene_id, participants=participants, pov_character_id=pov_character_id)
+    record = {"kind": "projection", "path": ".", "selector": "check_policy", "scene_id": scene_id,
+              "guard_version": 2, "projection_version": 2,
+              "source_paths": value["source_paths"], "projection_hash": _digest(value)}
+    if participants is not None:
+        record["participants"] = participants
+    if pov_character_id is not None:
+        record["pov_character_id"] = pov_character_id
+    return record, value
+
+
 def _verify(project_dir, records, ancestors, operation):
     if not isinstance(records, list):
         return [{"path": "", "reason": "invalid_dependency_records"}]
@@ -467,7 +552,10 @@ def _verify(project_dir, records, ancestors, operation):
         kind = record.get("kind", record.get("type"))
         identity = {"kind": kind, "path": path}
         try:
-            current = _snapshot_one(project_dir, record, operation)
+            guard_version = record.get("guard_version", 1)
+            if type(guard_version) is not int or guard_version not in (1, 2):
+                raise UserFacingError("unsupported dependency guard version")
+            current = _snapshot_one(project_dir, record, operation, legacy=guard_version == 1)
         except UserFacingError as exc:
             changes.append(dict(identity, reason="dependency_unavailable", detail=str(exc)))
             continue
@@ -477,10 +565,11 @@ def _verify(project_dir, records, ancestors, operation):
             if path in ancestors:
                 changes.append(dict(identity, reason="cyclic_artifact_dependency"))
                 continue
-            inputs = current.get("dependencies")
-            if inputs is None or current.get("dependency_digest") is None:
+            absolute, relative = _path(project_dir, path)
+            inputs, digest = _artifact_dependencies(project_dir, relative, absolute, operation)
+            if inputs is None or digest is None:
                 changes.append(dict(identity, reason="unverified_artifact_dependencies"))
-            elif current["dependency_digest"] != operation.digest(inputs):
+            elif digest != operation.digest(inputs):
                 changes.append(dict(identity, reason="invalid_artifact_dependency_digest"))
             else:
                 for issue in _verify(project_dir, inputs, ancestors | {path}, operation):

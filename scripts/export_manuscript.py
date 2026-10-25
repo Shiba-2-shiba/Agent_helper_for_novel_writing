@@ -11,6 +11,7 @@ def main():
     parser.add_argument("--project", required=True, help="Path to the project directory")
     parser.add_argument("--format", default="markdown", choices=["markdown"], help="Export format")
     parser.add_argument("--include-warnings", action="store_true", help="Include scenes approved with warning status")
+    parser.add_argument("--require-complete", action="store_true", help="Fail without writing if any planned scene would be omitted")
     parser.add_argument("--output", default="", help="Optional output path")
     parser.add_argument("--title", default=None, help="Manuscript title (defaults to the project directory name)")
     args = parser.parse_args()
@@ -19,8 +20,11 @@ def main():
     if not os.path.isdir(project_dir):
         raise UserFacingError(f"project directory not found: {project_dir}")
 
-    result = export_manuscript(project_dir, include_warnings=args.include_warnings, output_path=args.output, title=args.title)
-    print(f"OK: manuscript exported scenes={result['scene_count']}")
+    result = export_manuscript(project_dir, include_warnings=args.include_warnings, output_path=args.output,
+                               title=args.title, require_complete=args.require_complete)
+    print(f"OK: manuscript exported scenes={result['scene_count']} complete={str(result['complete']).lower()} omitted={len(result['omitted_scenes'])}")
+    for item in result["omitted_scenes"]:
+        print(f"WARNING: omitted scene_id={item['scene_id']} reason={item['reason']}")
     print(f"OK: output={result['output_path']}")
 
 

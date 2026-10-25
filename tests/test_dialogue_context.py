@@ -230,18 +230,24 @@ def test_reprepare_with_cli_selection_change_invalidates_previous_check(tmp_path
     assert verify_dependencies(str(project), report["check_inputs"])
 
 
-def test_absent_opt_in_keeps_legacy_dependency_projection_shapes(tmp_path):
+def test_absent_opt_in_uses_compact_guards_without_voice_source(tmp_path):
     from novel_agent.dependencies import snapshot_dependencies
     policy = current_check_policy(str(tmp_path), "1-2")
     assert "dialogue_voice_hash" not in policy
     assert "dialogue_voice.json" not in policy["source_paths"]
-    runtime_policy = snapshot_dependencies(str(tmp_path), [{"kind": "projection", "selector": "runtime_policy", "scene_id": "1-2"}])[0]["value"]
-    assert "dialogue_voice_hash" not in runtime_policy
+    runtime_policy = snapshot_dependencies(str(tmp_path), [{"kind": "projection", "selector": "runtime_policy", "scene_id": "1-2"}])[0]
+    assert "value" not in runtime_policy
+    assert "dialogue_voice.json" not in runtime_policy["source_paths"]
     path = tmp_path / "context_selection.json"
     payload = {"version": 1, "config": {}, "memory": {}}
     path.write_text(json.dumps(payload))
-    selected = snapshot_dependencies(str(tmp_path), [{"kind": "projection", "selector": "memory_selection", "path": str(path)}])[0]["value"]
-    assert selected["selection"] == payload
+    selected = snapshot_dependencies(str(tmp_path), [{"kind": "projection", "selector": "memory_selection", "path": str(path)}])[0]
+    assert "value" not in selected
+    from novel_agent.dependencies import verify_dependencies
+    assert verify_dependencies(str(tmp_path), [selected]) == []
+    payload["memory"]["changed"] = True
+    path.write_text(json.dumps(payload))
+    assert verify_dependencies(str(tmp_path), [selected])
 
 
 def memory_source_project(tmp_path):

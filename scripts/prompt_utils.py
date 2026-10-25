@@ -815,9 +815,8 @@ def suggest_scene_output_path(project_dir, scene_ref):
     if existing_path:
         return existing_path
 
-    chapter_items = [
-        item for item in _collect_scene_metadata(project_dir) if item["chapter"] == scene_ref["chapter"]
-    ]
+    all_items = _collect_scene_metadata(project_dir)
+    chapter_items = [item for item in all_items if item["chapter"] == scene_ref["chapter"]]
     preferred_dir = ""
     if chapter_items:
         dir_counts = {}
@@ -831,6 +830,14 @@ def suggest_scene_output_path(project_dir, scene_ref):
         preferred_dir = find_chapter_directory(project_dir, scene_ref["chapter"]) or project_dir
 
     style = "chapter_scene"
+    if not chapter_items:
+        # An empty chapter inherits only an unambiguous project-wide style.
+        styles = {
+            "scene_hyphen" if os.path.basename(item["path"]).lower().startswith("scene_") else "chapter_scene"
+            for item in all_items
+        }
+        if len(styles) == 1:
+            style = next(iter(styles))
     style_candidates = [item for item in chapter_items if os.path.dirname(item["path"]) == preferred_dir] or chapter_items
     for item in style_candidates:
         basename = os.path.basename(item["path"])

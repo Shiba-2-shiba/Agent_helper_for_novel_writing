@@ -186,12 +186,26 @@ def test_early_rewrite_stales_late_memory_and_approval(tmp_path):
     unrelated = manifest["scenes"][2]
     check_approve(project, unrelated)
     report = check_approve(project, target)
-    early_path = manifest["scenes"][0]["path"]
-    assert early_path in json.dumps(report["check_inputs"], ensure_ascii=False), "The changed source is an actual check dependency"
+    early_source = manifest["scenes"][0]
+    early_path = early_source["path"]
+    from novel_agent.dependencies import snapshot_check_policy, verify_dependencies
+    policy_guard = next(record for record in report["check_inputs"]
+                        if record.get("selector") == "check_policy"
+                        and record.get("scene_id") == target["scene_id"])
+    scope = {field: policy_guard[field] for field in ("participants", "pov_character_id")
+             if field in policy_guard}
+    captured_guard, policy = snapshot_check_policy(str(project), target["scene_id"], **scope)
+    assert captured_guard == policy_guard, "The compact guard must bind this exact effective policy"
+    required_sources = [member for dependency in policy["required_dependencies"]
+                        for member in dependency["members"]]
+    assert {"scene_id": early_source["scene_id"], "path": early_path,
+            "content_hash": early_source["content_hash"]} in required_sources
+    assert verify_dependencies(str(project), report["check_inputs"]) == []
     accepted_path = project / "story_memory" / "accepted.json"
     before = accepted_path.read_bytes()
     path = project / early_path
     path.write_text(path.read_text(encoding="utf-8").replace("青銅の鍵", "銀色の鍵"), encoding="utf-8")
+    assert verify_dependencies(str(project), report["check_inputs"]), "Changing the actual source must stale its compact guard"
     from novel_agent.approvals import refresh_approval_statuses
     ledger = refresh_approval_statuses(str(project))["scenes"]
     assert ledger[target["scene_id"]]["status"] == "stale"
@@ -236,9 +250,12 @@ def test_corrupt_store_recovery_never_discards_records(tmp_path):
     good = store.read_bytes()
     corrupt = good[:-9]
     store.write_bytes(corrupt)
-    cli("sync_project_health.py", "--project", project, "--fix-safe", "--json")
-    assert store.read_bytes() == corrupt
+    result = cli("sync_project_health.py", "--project", project, "--fix-safe", "--json", ok=False)
+    assert result.returncode != 0
+    assert json.loads(result.stdout)["status"] == "fail"
     health = read_json(project / "runtime" / "health_report.json")
+    assert health["status"] == "fail"
+    assert store.read_bytes() == corrupt
     assert "accepted.json" in json.dumps(health)
     assert health["blocking_issues"], health
     # Restore a known-good backup explicitly; health must never invent empty memory.

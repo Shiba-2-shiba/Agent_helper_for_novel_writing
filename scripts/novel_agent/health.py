@@ -55,6 +55,19 @@ def _corruption_issues(project_dir):
             try:
                 if root == runtime and name in validators:
                     validators[name]()
+                elif name == "dialogue_review_ledger.json":
+                    from novel_agent.dialogue_review import read_dialogue_review_ledger
+                    from prompt_utils import parse_scene_reference, UserFacingError
+                    location = os.path.relpath(root, runtime).split(os.sep)
+                    if len(location) != 2 or location[0] != "scenes":
+                        raise DataCorruptionError("dialogue review ledger must be scene-scoped: " + path)
+                    try:
+                        scene_id = parse_scene_reference(location[1])["canonical_id"]
+                    except UserFacingError as exc:
+                        raise DataCorruptionError("invalid dialogue review ledger location: {} ({})".format(path, exc))
+                    if scene_id != location[1]:
+                        raise DataCorruptionError("noncanonical dialogue review ledger location: " + path)
+                    read_dialogue_review_ledger(project_dir, scene_id)
                 else:
                     _load_json(path)
             except DataCorruptionError as exc:

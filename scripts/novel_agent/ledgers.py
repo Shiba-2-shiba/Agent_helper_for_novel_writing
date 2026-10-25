@@ -407,7 +407,7 @@ def dependency_record(project_dir, path, dependency_id=None):
 
 
 def _upsert_artifact(project_dir, payload, *, artifact_id, artifact_type, path, depends_on_paths=None, source="generated", dependencies=None):
-    from novel_agent.dependencies import snapshot_dependencies, dependency_digest
+    from novel_agent.dependencies import compact_dependencies, snapshot_dependencies, dependency_digest
     artifact_id = "artifact:" + _rel(path, project_dir).replace(os.sep, "/")
     now = utc_now()
     rel_path = _rel(path, project_dir)
@@ -423,7 +423,7 @@ def _upsert_artifact(project_dir, payload, *, artifact_id, artifact_type, path, 
         "source": existing.get("source", source) if existing else source,
         "protected_user_content": protected,
         "depends_on": [dependency_record(project_dir, dep_path) for dep_path in (depends_on_paths or []) if dep_path],
-        "dependencies": dependencies if dependencies is not None else snapshot_dependencies(project_dir, [{"kind": "file", "path": dep_path} for dep_path in (depends_on_paths or []) if dep_path]),
+        "dependencies": compact_dependencies(dependencies) if dependencies is not None else snapshot_dependencies(project_dir, [{"kind": "file", "path": dep_path} for dep_path in (depends_on_paths or []) if dep_path]),
         "created_at": created_at,
         "updated_at": now,
     }

@@ -16,25 +16,37 @@ FAIL_FORMAT_TYPES = {
 
 
 def detect_unclosed_dialogue(text):
-    open_count = text.count("「")
-    close_count = text.count("」")
-    if open_count == close_count:
+    """Reject malformed quote balance for both styles, including wrong order.
+
+    Counts alone accept an orphan alternate-style opener that consumes later
+    valid utterances in candidate extraction. A shared stack interpretation
+    keeps that extraction uncertainty mechanically blocking, without repairing
+    source or turning valid nested/multiline dialogue into separate utterances.
+    """
+    pairs = {'「': '」', '『': '』'}
+    stack = []
+    failure_offset = None
+    for offset, char in enumerate(text):
+        if char in pairs:
+            stack.append((pairs[char], offset))
+        elif char in ('」', '』'):
+            if not stack or stack[-1][0] != char:
+                failure_offset = offset
+                break
+            stack.pop()
+    if failure_offset is None and stack:
+        failure_offset = stack[0][1]
+    if failure_offset is None:
         return None
-
-    for line in text.splitlines():
-        if line.count("「") != line.count("」"):
-            return {
-                "type": "unclosed_dialogue_detected",
-                "match": line.strip()[:80],
-                "open_count": open_count,
-                "close_count": close_count,
-            }
-
+    line_start = text.rfind('\n', 0, failure_offset) + 1
+    line_end = text.find('\n', failure_offset)
+    if line_end < 0:
+        line_end = len(text)
     return {
-        "type": "unclosed_dialogue_detected",
-        "match": "dialogue quote count mismatch",
-        "open_count": open_count,
-        "close_count": close_count,
+        'type': 'unclosed_dialogue_detected',
+        'match': text[line_start:line_end].strip()[:80],
+        'open_count': text.count('「') + text.count('『'),
+        'close_count': text.count('」') + text.count('』'),
     }
 
 
@@ -230,3 +242,74 @@ def classify_quality(*, actual_chars, min_chars, max_chars, format_details, forb
             "max_penalty": 10,
         },
     }
+
+
+DIALOGUE_EXTRACTOR_VERSION = 'dialogue-candidates-v1'
+
+
+def dialogue_digest(value):
+    """Canonical JSON identity, not an authentication or literary guarantee."""
+    import hashlib
+    import json
+    raw = json.dumps(value, ensure_ascii=False, sort_keys=True,
+                     separators=(',', ':'), allow_nan=False)
+    return hashlib.sha256(raw.encode('utf-8')).hexdigest()
+
+
+def source_span(text, start, end):
+    import hashlib
+    quote = text[start:end]
+    return {'start_char': start, 'end_char': end,
+            'start_line': text.count('\n', 0, start) + 1,
+            'end_line': text.count('\n', 0, end - 1) + 1,
+            'quote': quote, 'quote_hash': hashlib.sha256(quote.encode('utf-8')).hexdigest()}
+
+
+def extract_dialogue_candidates(text):
+    """Retrieve maximal >=4-utterance chains. This is not defect detection.
+
+    Offsets refer to the decoded source (universal newlines at the reader).
+    The 80 non-whitespace character bridge is versioned retrieval provenance,
+    not a requirement to add narration or thoughts at any fixed frequency.
+    """
+    closes = {'「': '」', '『': '』'}
+    stack, utterances = [], []
+    start = None
+    for offset, char in enumerate(text):
+        if char in closes:
+            if not stack:
+                start = offset
+            stack.append(closes[char])
+        elif char in ('」', '』'):
+            if not stack or char != stack[-1]:
+                stack, start = [], None
+                continue
+            stack.pop()
+            if not stack:
+                utterances.append(source_span(text, start, offset + 1))
+                start = None
+    candidates, chain, links = [], [], []
+
+    def emit():
+        if len(chain) < 4:
+            return
+        span = source_span(text, chain[0]['start_char'], chain[-1]['end_char'])
+        identity = {'extractor_version': DIALOGUE_EXTRACTOR_VERSION,
+                    'start_char': span['start_char'], 'end_char': span['end_char'],
+                    'quote_hash': span['quote_hash']}
+        candidates.append({'candidate_id': 'd-' + dialogue_digest(identity), 'span': span,
+                           'utterances': list(chain), 'link_kinds': list(links),
+                           'kind': links[0] if len(set(links)) == 1 else 'mixed'})
+
+    for utterance in utterances:
+        if chain:
+            gap = text[chain[-1]['end_char']:utterance['start_char']]
+            nonspace = ''.join(gap.split())
+            if len(nonspace) <= 80 and not any(c in gap for c in '「」『』'):
+                links.append('direct' if not nonspace else 'short_narration')
+            else:
+                emit()
+                chain, links = [], []
+        chain.append(utterance)
+    emit()
+    return candidates

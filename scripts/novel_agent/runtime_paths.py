@@ -70,7 +70,8 @@ def resolve_runtime_dir(project_dir, *, mode='', scene_ref=None, runtime_dir_arg
 
 
 def write_runtime_manifest(project_dir, runtime_dir, *, scene_id, mode, files, inputs):
-    from novel_agent.dependencies import dependency_digest
+    from novel_agent.dependencies import compact_dependencies, dependency_digest
+    inputs = compact_dependencies(inputs)
     payload = {'version': 1, 'project_dir': os.path.realpath(project_dir), 'scene_id': scene_id, 'mode': mode,
                'files': [{'path': os.path.relpath(path, project_dir).replace(os.sep, '/'), 'content_hash': text_content_hash(path)} for path in files],
                'inputs': inputs, 'inputs_digest': dependency_digest(inputs)}

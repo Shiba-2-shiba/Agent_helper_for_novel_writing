@@ -7,9 +7,10 @@ import hashlib
 from datetime import datetime, timezone
 
 from novel_agent.storage import text_content_hash, project_lock
-from novel_agent.dependencies import snapshot_dependencies, dependency_digest, current_check_policy
+from novel_agent.dependencies import snapshot_dependencies, dependency_digest, snapshot_check_policy
 from novel_agent.runtime_paths import require_runtime_current
 from novel_agent.approvals import validate_check_identity
+from novel_agent.dialogue_review import build_scene_dialogue_contract
 
 
 from novel_agent.text_quality import (
@@ -167,11 +168,15 @@ def main():
                 raise UserFacingError("same-scene prepare failed: " + result.stdout.strip())
             runtime_dir = resolve_runtime_dir(project_dir, mode="draft", scene_ref=scene_ref)
         require_runtime_current(project_dir, runtime_dir)
-        policy = current_check_policy(project_dir, scene_ref["canonical_id"])
+        from novel_agent.storage import read_json
+        selection = read_json(os.path.join(runtime_dir, "context_selection.json"), default_factory=dict).get("dialogue", {})
+        policy_guard, policy = snapshot_check_policy(
+            project_dir, scene_ref["canonical_id"],
+            participants=selection.get("participants") if selection.get("participants_source") == "cli" else None,
+            pov_character_id=selection.get("pov_character_id") if selection.get("pov_source") == "cli" else None)
         scene_band = policy["length_band"]
         obligation_contract = policy["obligation_contract"]
-        specs = [{"kind": "projection", "selector": "check_policy", "scene_id": scene_ref["canonical_id"]},
-                 {"kind": "projection", "selector": "dialogue_selection",
+        specs = [{"kind": "projection", "selector": "dialogue_selection",
                   "path": os.path.join(runtime_dir, "context_selection.json")}]
     else:
         # Standalone drafts never consume latest_by_mode or mutate scene state.
@@ -185,9 +190,7 @@ def main():
         specs = [{"kind": "file", "path": os.path.join(runtime_dir, "style_contract_compact.md")}]
     check_inputs = snapshot_dependencies(project_dir, specs)
     if scene_ref:
-        policy = check_inputs[0]["value"]
-        scene_band = policy["length_band"]
-        obligation_contract = policy["obligation_contract"]
+        check_inputs.insert(0, policy_guard)
     effective_min = scene_band["min"] if scene_band else args.min_chars
     effective_target = scene_band["target"] if scene_band else args.target_chars
     effective_max = scene_band["max"] if scene_band else args.max_chars
@@ -273,7 +276,10 @@ def main():
     output_path = os.path.join(runtime_dir, "check_report.json")
     # Check against current source and policy again immediately before persistence.
     with project_lock(project_dir):
+        if scene_ref:
+            require_runtime_current(project_dir, runtime_dir)
         validate_check_identity(project_dir, scene_ref, text_path, report)
+        report['dialogue_review_contract'] = build_scene_dialogue_contract(project_dir, scene_ref, body_text)
         write_json_file(output_path, report)
         if scene_ref:
             from novel_agent.ledgers import _update_quality_budget_from_check_locked, _register_artifact_locked
@@ -300,7 +306,11 @@ def main():
         summary="story_state updated from scene check",
         artifacts=[os.path.join(project_dir, "runtime", "story_state.json")],
     )
-    print("OK: scene output checked")
+    print("OK: scene output mechanically checked (not a literary quality guarantee)")
+    contract = report['dialogue_review_contract']
+    print('OK: dialogue candidates={} review_required={}'.format(len(contract['candidates']), str(contract['review_required']).lower()))
+    if contract['review_required']:
+        print('NEXT: run review_scene_dialogue.py --project {} --scene {} before approval'.format(project_dir, scene_ref['canonical_id']))
     print(f"OK: needs_expand={str(report['needs_expand']).lower()} actual_chars={actual_chars}")
 
 

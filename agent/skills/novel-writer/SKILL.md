@@ -136,3 +136,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 # Shared Long-Novel Contract
 
 開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。
+
+## Dialogue Review Gate
+
+新規approve前には全候補へkeep/revise/uncertainと正確な本文根拠を記録する。情報だけの問答の圧縮と、印象が返答を変える選択的な受け止めを区別する。軽快な応酬のkeepも理由を残し、4発話ごとの心理・仕草追加規則にはしない。手順とCLIは `docs/dialogue_context.md` に従う。空欄のひな型はレビュー済みではなく、automationや `--allow-warnings` で免除しない。既存承認の歴史的検証と、新規承認のレビュー条件を区別する。

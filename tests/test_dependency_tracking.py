@@ -293,6 +293,7 @@ def test_empty_preferred_session_notes_tracks_consumed_fallback(tmp_path):
     fallback.write_text('実際に読まれるメモ。', encoding='utf-8')
     from novel_agent.dependencies import snapshot_dependencies, verify_dependencies
     records = snapshot_dependencies(str(tmp_path), [{'kind': 'projection', 'selector': 'runtime_policy'}])
-    assert records[0]['value']['session_notes'] == '実際に読まれるメモ。'
+    assert records[0]['source_paths'] == ['agent/state_schema_novel.yaml', 'agent/memory/global_notes.md', 'memory/session_notes.md', '05_chapter_outline.md']
+    assert 'value' not in records[0]
     fallback.write_text('後から変えたメモ。', encoding='utf-8')
     assert verify_dependencies(str(tmp_path), records)

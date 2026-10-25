@@ -106,6 +106,28 @@ def build_dialogue_context(project_dir, *, scene_id, participants=None, pov_char
             "pov_source": "cli" if pov_character_id is not None else ("scene" if pov else "missing")}
 
 
+
+def dialogue_dependency_value(project_dir, *, scene_id, participants=None, pov_character_id=None):
+    """Project only the selected scene/voices, including missing selected cards.
+
+    CLI overrides replace defaults in exactly the same way as the writer pack.
+    Full config validation still rejects malformed explicit planning data.
+    """
+    payload = _load(project_dir)
+    scene = payload.get("scenes", {}).get(scene_id, {})
+    selected = _participants(participants if participants is not None else scene.get("participants", []), "participants")
+    pov = pov_character_id if pov_character_id is not None else scene.get("pov_character_id")
+    if pov is not None:
+        _identifier(pov, "POV")
+    ids = list(dict.fromkeys(selected + ([pov] if pov else [])))
+    return {"exists": os.path.isfile(os.path.join(project_dir, VOICE_PATH)),
+            "scene_configuration": payload.get("scenes", {}).get(scene_id),
+            "participants": selected, "pov_character_id": pov,
+            "participants_source": "cli" if participants is not None else ("scene" if "participants" in scene else "missing"),
+            "pov_source": "cli" if pov_character_id is not None else ("scene" if pov else "missing"),
+            "cards": {character_id: payload["characters"].get(character_id) for character_id in ids}}
+
+
 def read_dialogue_pack(runtime_dir):
     """Legacy runtimes keep working, but cannot silently imply configured voices."""
     path = os.path.join(runtime_dir, "dialogue_context_pack.md")

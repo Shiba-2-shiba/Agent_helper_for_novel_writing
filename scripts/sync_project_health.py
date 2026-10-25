@@ -32,11 +32,12 @@ def main():
         if fixed:
             print(f"OK: fixed_safe={','.join(fixed)}")
         print(f"OK: report={path}")
+    return 1 if report["status"] == "fail" else 0
 
 
 if __name__ == "__main__":
     try:
-        main()
+        sys.exit(main())
     except UserFacingError as exc:
         print(f"ERROR: {exc}")
         sys.exit(1)

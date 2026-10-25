@@ -46,6 +46,16 @@ def main():
     check.add_argument("--text", required=True)
     check.add_argument("--runtime_dir", default="")
 
+    review = sub.add_parser("review-dialogue")
+    review.add_argument("--project", required=True)
+    review.add_argument("--scene", required=True)
+    review.add_argument("--runtime_dir", default="")
+    review_files = review.add_mutually_exclusive_group()
+    review_files.add_argument("--output")
+    review_files.add_argument("--input")
+    review.add_argument("--reviewer-type", choices=REVIEWER_TYPES)
+    review.add_argument("--reviewer-id")
+
     repair = sub.add_parser("repair")
     repair.add_argument("--project", required=True)
     repair.add_argument("--text", required=True)
@@ -62,6 +72,7 @@ def main():
     export = sub.add_parser("export")
     export.add_argument("--project", required=True)
     export.add_argument("--include-warnings", action="store_true")
+    export.add_argument("--require-complete", action="store_true")
 
     health = sub.add_parser("health")
     health.add_argument("--project", required=True)
@@ -99,7 +110,15 @@ def main():
         if args.runtime_dir:
             script_args.extend(["--runtime_dir", args.runtime_dir])
         _run_script("check_scene_output.py", script_args)
-        print("NEXT: approve if pass, or repair/revise if needed")
+        print("NEXT: resolve any required dialogue review before approve; repair/revise mechanical failures and recheck")
+    elif args.command == "review-dialogue":
+        script_args = ["--project", project_dir, "--scene", args.scene]
+        for attr in ("runtime_dir", "output", "input", "reviewer_type", "reviewer_id"):
+            value = getattr(args, attr)
+            if value:
+                flag = "--" + (attr.replace("_", "-") if attr.startswith("reviewer_") else attr)
+                script_args.extend([flag, value])
+        _run_script("review_scene_dialogue.py", script_args)
     elif args.command == "repair":
         script_args = ["--project", project_dir, "--draft_text", args.text]
         if args.runtime_dir:
@@ -119,6 +138,8 @@ def main():
         script_args = ["--project", project_dir]
         if args.include_warnings:
             script_args.append("--include-warnings")
+        if args.require_complete:
+            script_args.append("--require-complete")
         _run_script("export_manuscript.py", script_args)
         print("NEXT: review exports/manuscript.md")
     elif args.command == "health":

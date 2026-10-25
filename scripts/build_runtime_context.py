@@ -243,7 +243,7 @@ def build_scene_brief(chapter_block, scene_ref, project_dir, planning_meta, obli
     hook = (
         next_plan["purpose"]
         if next_plan and next_plan["purpose"]
-        else next_desc or "次シーンで回収できる未解決要素を1つ残す"
+        else next_desc or "場面の決着と余韻（続きがある場合のみ接続）"
     )
     payoff, seed = _split_payoff_seed(scene_plan["payoff_or_seed"] if scene_plan else "")
     depends_on = scene_plan["depends_on"] if scene_plan and scene_plan["depends_on"] else "-"
@@ -345,7 +345,7 @@ def build_request_compact(mode, priority, scene_ref, planning_meta, length_band)
         deliverables = [
             "自然な本文初稿",
             "直前シーンと接続した導入",
-            "次シーンへ渡すフック",
+            "場面の決着と余韻（続きがある場合のみ接続）",
         ]
     else:
         purpose = "現在位置を短く再把握し、次の作業モード判断につなげる"
@@ -586,6 +586,14 @@ def _build_runtime_context_locked(project_dir, args):
                    ({"kind": "scene_set", "scope": "all"} if args.mode == "resume" else {"kind": "scene_set", "target_scene_id": scene_ref["canonical_id"]})]
     if args.mode == "draft":
         input_specs.append({"kind": "projection", "selector": "check_policy", "scene_id": scene_ref["canonical_id"]})
+    # Capture CLI voice overrides before any source is consumed. Unselected
+    # scene-default cards must not invalidate a CLI-selected writer context.
+    for spec in input_specs:
+        if spec.get("kind") == "projection":
+            if getattr(args, "participant", None) is not None:
+                spec["participants"] = args.participant
+            if args.pov_character is not None:
+                spec["pov_character_id"] = args.pov_character
     if previous_path:
         input_specs.append({"kind": "file", "path": previous_path})
     input_specs.extend([{"kind": "file", "path": "story_memory/accepted.json"},
@@ -600,7 +608,21 @@ def _build_runtime_context_locked(project_dir, args):
         for source in record["sources"]:
             source_specs.append({"kind": "file", "path": source["path"]})
             if source.get("scene_id"):
-                source_specs.append({"kind": "projection", "selector": "check_policy", "scene_id": source["scene_id"]})
+                approval = source_approvals.get(source["scene_id"], {})
+                approved_policy = next((dependency for dependency in approval.get("check_inputs", []) or []
+                                        if isinstance(dependency, dict) and dependency.get("selector") == "check_policy"
+                                        and dependency.get("scene_id") == source["scene_id"]), None)
+                source_policy = {"kind": "projection", "selector": "check_policy", "scene_id": source["scene_id"]}
+                if approved_policy is not None:
+                    # Recapture current originals under the approval's exact
+                    # effective scope, not narrowed modern defaults. A legacy
+                    # source approval still binds the whole voice file.
+                    source_policy["projection_version"] = approved_policy.get(
+                        "projection_version", 1 if "guard_version" not in approved_policy else 2)
+                    for field in ("participants", "pov_character_id"):
+                        if field in approved_policy:
+                            source_policy[field] = approved_policy[field]
+                source_specs.append(source_policy)
                 # A source approval can depend on the CLI-selected voices/POV.
                 # Guard its recorded path, including non-default runtimes, so a
                 # stale source cannot remain in an already-generated memory pack.

@@ -84,3 +84,7 @@ description: Rewrite an existing scene while preserving selected strengths and c
 # Shared Long-Novel Contract
 
 開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。
+
+## Dialogue Review Gate
+
+会話を改稿する前に現本文のreviewを記録する。revise/uncertainの範囲は再check後、保存済みbeforeと現本文afterを正確に比較する。間接叙述へ圧縮して候補0件でも比較義務は残る。相手の問いの受け取りが返答の省略を変える要所だけ選択的に補い、無変更の再考を改稿と偽らない。手順とCLIは `docs/dialogue_context.md` に従う。空欄のひな型はレビュー済みではなく、automationや `--allow-warnings` で免除しない。既存承認の歴史的検証と、新規承認のレビュー条件を区別する。

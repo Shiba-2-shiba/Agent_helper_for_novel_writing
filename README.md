@@ -137,17 +137,20 @@ python scripts/run_scene_pipeline.py prepare --project my_novel --chapter 2 --sc
 python scripts/run_scene_pipeline.py prompt --project my_novel
 python scripts/run_scene_pipeline.py check --project my_novel --text chapter_2_scene_3.txt
 python scripts/run_scene_pipeline.py repair --project my_novel --text chapter_2_scene_3.txt
+# checkが会話レビューを要求した場合、本文に根拠を記入してから提出する
+python scripts/run_scene_pipeline.py review-dialogue --project my_novel --scene 2-3 --output review-input.json
+python scripts/run_scene_pipeline.py review-dialogue --project my_novel --scene 2-3 --input review-input.json --reviewer-type agent --reviewer-id codex
 python scripts/run_scene_pipeline.py approve --project my_novel --scene 2-3 --reviewer-type agent --reviewer-id codex
-python scripts/run_scene_pipeline.py export --project my_novel
+python scripts/run_scene_pipeline.py export --project my_novel --require-complete
 python scripts/run_scene_pipeline.py health --project my_novel --fix-safe
 ```
 
 - `approve_scene.py` は `check_report.json` が `fail` のシーンを承認しません
 - 承認CLIは `--reviewer-type human|agent|automation` と `--reviewer-id` が必須です。実際に確認した主体を記録し、AIのレビューを人間の承認と表しません。旧記録の曖昧な承認者は `unknown` と扱います。
-- `warning` のシーンは `--allow-warnings` がある場合だけ承認できます
+- `warning` のシーンは根拠をレビューし、`--allow-warnings` がある場合だけ承認できます。会話レビューの未実施・非keepは免除しません。候補数は欠陥数ではなく、情報問答の圧縮・選択的な受け止め・意図的な速度の保持を分けて判断します（[会話レビュー手順](docs/dialogue_context.md)）。
 - 承認時は本文 hash を `runtime/approval_ledger.json` に保存し、本文変更後の stale approval を export 前に検出します
-- `export_manuscript.py` は承認済み scene txt だけを `exports/manuscript.md` に結合します
-- `sync_project_health.py` は scene summaries / story state / trace view などの派生物を `--fix-safe` で再生成できます
+- `export_manuscript.py` は承認済み scene txt だけを `exports/manuscript.md` に結合します。完成原稿には `--require-complete` を使います。省略時は部分exportであり、全稿完成ではありません。warningの承認内容を確認した場合だけ `--include-warnings` を明示します。
+- `sync_project_health.py` は scene summaries / story state / trace view などの派生物を `--fix-safe` で再生成できます。healthのfailは非0終了となり、pipelineも停止します。[試運転での診断改善](docs/trial_cli_diagnostics.md)も参照してください。
 - `check_scene_output.py` は `obligation_contract.json` に基づく依存欠落を blocking issue とし、反AI文体パターンは warning として出します
 
 #### ステップ4: 補助の legacy フル文脈プロンプトを使う（高コスト・手動運用のみ）

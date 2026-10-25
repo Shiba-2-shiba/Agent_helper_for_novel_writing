@@ -15,15 +15,6 @@ from prompt_utils import (
 )
 
 
-def _approved_records(project_dir):
-    payload = _refresh_approval_statuses_locked(project_dir)
-    return {
-        scene_id: record
-        for scene_id, record in payload.get("scenes", {}).items()
-        if isinstance(record, dict) and record.get("status") == "approved"
-    }
-
-
 def _outline_scene_order(project_dir):
     outline_path = resolve_outline_path(project_dir, require_exists=False)
     if not os.path.isfile(outline_path):
@@ -39,39 +30,48 @@ def _outline_scene_order(project_dir):
     return ordered
 
 
-def _fallback_scene_order(project_dir):
-    return [f"{item['chapter']}-{item['scene']}" for item in collect_scene_metadata(project_dir)]
-
-
-def export_manuscript(project_dir, *, include_warnings=False, output_path="", title=None):
+def export_manuscript(project_dir, *, include_warnings=False, output_path="", title=None, require_complete=False):
     if title is not None and (not title.strip() or len(title.splitlines()) != 1):
         raise UserFacingError("title must be a non-empty single line")
     with project_lock(project_dir):
-        return _export_manuscript_locked(project_dir, include_warnings=include_warnings, output_path=output_path, title=title)
+        return _export_manuscript_locked(project_dir, include_warnings=include_warnings, output_path=output_path,
+                                         title=title, require_complete=require_complete)
 
 
-def _export_manuscript_locked(project_dir, *, include_warnings=False, output_path="", title=None):
-    approved = _approved_records(project_dir)
+def _export_manuscript_locked(project_dir, *, include_warnings=False, output_path="", title=None, require_complete=False):
+    records = _refresh_approval_statuses_locked(project_dir).get("scenes", {})
     stale = [
         scene_id
-        for scene_id, record in _refresh_approval_statuses_locked(project_dir).get("scenes", {}).items()
+        for scene_id, record in records.items()
         if isinstance(record, dict) and record.get("status") == "stale"
     ]
     if stale:
         raise UserFacingError("stale approval detected: " + ", ".join(sorted(stale)))
 
-    ordered_ids = _outline_scene_order(project_dir) or _fallback_scene_order(project_dir)
+    inventory_ids = [f"{item['chapter']}-{item['scene']}" for item in collect_scene_metadata(project_dir)]
+    available_ids = set(inventory_ids)
+    ordered_ids = _outline_scene_order(project_dir) or inventory_ids
     selected = []
+    omitted = []
     for scene_id in ordered_ids:
-        record = approved.get(scene_id)
-        if not record:
+        record = records.get(scene_id)
+        if scene_id not in available_ids:
+            omitted.append({"scene_id": scene_id, "reason": "scene_missing"})
+            continue
+        if not record or record.get("status") != "approved":
+            omitted.append({"scene_id": scene_id, "reason": "not_approved"})
             continue
         if record.get("check_status") == "warning" and not include_warnings:
+            omitted.append({"scene_id": scene_id, "reason": "warning_excluded"})
             continue
         selected.append((scene_id, record))
 
+    omissions = ", ".join("{scene_id} ({reason})".format(**item) for item in omitted)
+    if require_complete and omitted:
+        raise UserFacingError("incomplete manuscript; omitted scenes: " + omissions)
     if not selected:
-        raise UserFacingError("no approved scenes available for export")
+        message = "no approved scenes available for export"
+        raise UserFacingError(message + ("; omitted scenes: " + omissions if omitted else ""))
 
     title = title.strip() if title is not None else os.path.basename(os.path.normpath(project_dir))
     lines = [f"# {title}", ""]
@@ -91,5 +91,7 @@ def _export_manuscript_locked(project_dir, *, include_warnings=False, output_pat
     output_path = output_path or os.path.join(project_dir, "exports", "manuscript.md")
     ensure_directory(os.path.dirname(output_path))
     write_text_file(output_path, "\n".join(lines) + "\n")
-    return {"output_path": output_path, "scene_count": len(selected), "scenes": [scene_id for scene_id, _ in selected]}
+    return {"output_path": output_path, "scene_count": len(selected),
+            "scenes": [scene_id for scene_id, _ in selected],
+            "complete": not omitted, "omitted_scenes": omitted}
 
