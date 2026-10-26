@@ -122,9 +122,15 @@ def create_runtime_project(
     outline_filename="05_chapter_outline_100k.md",
     outline_text=RUNTIME_OUTLINE_TEXT,
     state_schema_text=None,
+    keyframing="disabled_fixture",
 ):
     proj = tmp_path / "runtime_proj"
     proj.mkdir()
+    if keyframing == "disabled_fixture":
+        from helpers.keyframe_fixtures import disable_keyframing
+        disable_keyframing(proj)
+    elif keyframing != "default":
+        raise ValueError("unknown keyframing fixture mode")
 
     write_utf8(str(proj / outline_filename), outline_text)
     agent_memory = proj / "agent" / "memory"
@@ -1212,6 +1218,11 @@ class TestRuntimeRefactorScripts:
             encoding="utf-8",
         )
 
+        from helpers.keyframe_fixtures import bind_disabled_check_fixture
+        bind_disabled_check_fixture(project_dir, runtime_dir, {"check_inputs": []}, scene_id="2-3")
+        for name in ("dialogue_context_pack.md", "planning_gate_brief.md"):
+            if not (runtime_dir / name).exists():
+                (runtime_dir / name).write_text("", encoding="utf-8")
         result = subprocess.run(
             [
                 sys.executable,
@@ -1276,6 +1287,11 @@ class TestRuntimeRefactorScripts:
             encoding="utf-8",
         )
 
+        from helpers.keyframe_fixtures import bind_disabled_check_fixture
+        bind_disabled_check_fixture(project_dir, runtime_dir, {"check_inputs": []}, scene_id="2-3")
+        for name in ("dialogue_context_pack.md", "planning_gate_brief.md"):
+            if not (runtime_dir / name).exists():
+                (runtime_dir / name).write_text("", encoding="utf-8")
         result = subprocess.run(
             [
                 sys.executable,
@@ -1800,7 +1816,7 @@ class TestRuntimeRefactorScripts:
         assert "continuity_pack" in artifact_types
         assert all(item["status"] == "active" for item in payload["artifacts"])
 
-    def test_build_draft_prompt_warns_on_stale_runtime_artifact(self, tmp_path):
+    def test_legacy_stale_runtime_cannot_bypass_new_prepare_gate(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
         subprocess.run(
             [
@@ -1844,8 +1860,8 @@ class TestRuntimeRefactorScripts:
             text=True,
         )
 
-        assert result.returncode == 0, result.stdout + result.stderr
-        assert "WARN: stale runtime artifact detected" in result.stdout
+        assert result.returncode != 0
+        assert "legacy runtime" in result.stdout and "prepare" in result.stdout
 
     def test_build_draft_prompt_appends_token_ledger(self, tmp_path):
         project_dir = create_runtime_project(tmp_path, outline_filename="05_chapter_outline.md")
@@ -2105,6 +2121,8 @@ class TestScenePipelineRefactor:
         inputs = snapshot_dependencies(project_dir, [{"kind": "projection", "selector": "check_policy", "scene_id": scene_id}])
         report.update(version=2, scope="scene", scene_id=scene_id, source_path=os.path.relpath(report["target_file"], project_dir), source_hash=text_content_hash(report["target_file"]), hash_algorithm="sha256-utf8-text-v1", check_inputs=inputs, check_inputs_digest=dependency_digest(inputs))
         write_utf8(os.path.join(runtime_dir, "scene_brief_compact.md"), "- Scene ID: " + scene_id + "\n")
+        from helpers.keyframe_fixtures import bind_disabled_check_fixture
+        bind_disabled_check_fixture(project_dir, runtime_dir, report, scene_id=scene_id)
         write_utf8(os.path.join(runtime_dir, "check_report.json"), json.dumps(report, ensure_ascii=False))
         return runtime_dir
 

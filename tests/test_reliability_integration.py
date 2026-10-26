@@ -102,7 +102,10 @@ def test_two_scene_approvals_never_lose_update(tmp_path):
     runtime.mkdir(parents=True)
     (runtime / 'scene_brief_compact.md').write_text('- Scene ID: 1-2\n')
     inputs = snapshot_dependencies(str(tmp_path), [{'kind': 'projection', 'selector': 'check_policy', 'scene_id': '1-2'}])
-    atomic_write_json(str(runtime / 'check_report.json'), dict(version=2, scope='scene', scene_id='1-2', source_path='scene_1-2.txt', source_hash=text_content_hash(str(second)), hash_algorithm='sha256-utf8-text-v1', check_inputs=inputs, check_inputs_digest=dependency_digest(inputs), status='pass'))
+    report = dict(version=2, scope="scene", scene_id="1-2", source_path="scene_1-2.txt", source_hash=text_content_hash(str(second)), hash_algorithm="sha256-utf8-text-v1", check_inputs=inputs, check_inputs_digest=dependency_digest(inputs), status="pass")
+    from helpers.keyframe_fixtures import bind_disabled_check_fixture
+    bind_disabled_check_fixture(tmp_path, runtime, report, scene_id="1-2")
+    atomic_write_json(str(runtime / "check_report.json"), report)
     def approve(scene):
         try:
             approve_scene(str(tmp_path), scene)
@@ -133,6 +136,8 @@ def test_custom_runtime_check_updates_scene_status(tmp_path):
     prepare(project)
     custom = os.path.join(project, 'runtime/custom-check')
     shutil.copytree(os.path.join(project, 'runtime/scenes/2-3/draft'), custom)
+    from helpers.keyframe_fixtures import bind_disabled_check_fixture
+    bind_disabled_check_fixture(project, custom, {'check_inputs': []}, scene_id='2-3')
     scene = os.path.join(project, 'chapter_2_scene_3.txt')
     with open(scene, 'w') as handle:
         handle.write('あ' * 1300)

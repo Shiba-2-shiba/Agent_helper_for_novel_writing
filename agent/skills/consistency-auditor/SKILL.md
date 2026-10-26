@@ -86,3 +86,9 @@ description: Diagnose plot, setting, pacing, continuity, and style issues withou
 ## Dialogue Review Gate
 
 会話候補数を欠陥数と扱わない。全自動候補のdecision/evidence/reason/reader_effectを本文と照合し、情報問答の圧縮と選択的なPOVの受け止めを分けて判断する。候補外の会話も読む。keepは根拠ある保持、非keepは新規承認を止める。hash/schemaの合格を文学的品質の保証と呼ばない。手順とCLIは `docs/dialogue_context.md` に従う。空欄のひな型はレビュー済みではなく、automationや `--allow-warnings` で免除しない。既存承認の歴史的検証と、新規承認のレビュー条件を区別する。
+
+## 選択的主観素材と本文レビュー
+
+`docs/narrative_keyframing.md` に従う。新prepareでは設定なしでも基本有効で、明示POVを共有する。選んだ素材は主に台詞ににじませる／地の文に出し、省略は両経路が不自然・冗長・テンポを損なう具体的理由がある場合だけ。全発話への心理・仕草の追加をノルマにしない。素材の一人称文を本文へ逐語転記する必要はない。相手の内心を断定せず、作者用情報や未来の予定をPOVの既知事実・canonへ昇格しない。
+
+候補に関係する登録素材を本文のexact span・読者効果と照合し、台詞の言い直し等の暗示的反映も評価する。keep/revise/uncertainと改稿前後の正確な比較を維持する。候補外の短い台詞や地の文も自己評価するが、全主観を機械検査したとは主張しない。反映を省略へ変える場合は両経路の理由をproposalに記し再登録・prompt再生成・再checkする。expandは既に伝わる心理を重複説明せず文字数不足への局所増補のみ。

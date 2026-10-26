@@ -6,6 +6,7 @@
 ## 20万字対応の入口
 
 - [共通運用手順](docs/long_novel_workflow.md)
+- [基本有効の選択的主観素材](docs/narrative_keyframing.md)
 - [出典付き物語記憶](docs/story_memory_format.md)
 - [10万字から20万字への安全な移行](docs/migrate_100k_to_200k.md)
 - エージェントの開始点: [AGENTS.md](AGENTS.md)
@@ -26,7 +27,7 @@
 **💡 `runtime-first` の意味**
 - 本文執筆では、毎回フル文脈を読み直さず、`runtime/draft_prompt.txt` または `runtime/*.md` の圧縮済み文脈を優先します
 - 再開時は、`runtime/resume_brief.md` を優先して現在地を確認します
-- `runtime/` が未生成・欠損・対象不一致のときだけ、従来の広い文脈参照へフォールバックします
+- `runtime/` が未生成・欠損・対象不一致なら同じsceneを再prepareし、未検証の文脈へフォールバックして執筆しません
 
 1. **設定・プロットの準備（エージェントとの対話型立ち上げ）**:
    アイディアが固まっていない状態からでも、Antigravityエージェントに壁打ち相手になってもらうことができます。
@@ -42,8 +43,9 @@
    > 「`agent/HUB.md` を参照して、{プロジェクト名}の第1章の執筆ループを開始して。」
 
    この依頼では、エージェントは必要に応じて以下を先に行います。
-   - `python scripts/build_runtime_context.py --project <project> --chapter <chapter> --scene <scene> --mode draft`
-   - `python scripts/build_draft_prompt.py --project <project>`
+   - `python scripts/build_runtime_context.py --project <project> --chapter <chapter> --scene <scene> --mode draft --pov-character <pov_id>`
+   - `keyframe-prompt` → 外部エージェントがproposalを作成 → `register-keyframes`（[手順](docs/narrative_keyframing.md)）
+   - `python scripts/build_draft_prompt.py --project <project> --scene <scene>`
    - 初稿保存後に `python scripts/check_scene_output.py --project <project> --text <scene_txt_path>`
    - `needs_expand=true` の場合のみ `python scripts/build_expand_prompt.py --project <project> --draft_text <scene_txt_path>`（途中差し込みも含む局所差分だけを生成）
    - 差分案を採用する場合は `python scripts/apply_expand_edits.py --project <project> --text <scene_txt_path> --edits <expand_response_path>` で反映する
@@ -99,8 +101,11 @@ python scripts/init_project.py my_novel --target-total-chars 50000 --from_ideas
 
 #### ステップ3: 標準の `runtime` フローで日常執筆を回す
 ```bash
-python scripts/build_runtime_context.py --project my_novel --chapter 2 --scene 2-3 --mode draft
-python scripts/build_draft_prompt.py --project my_novel
+python scripts/build_runtime_context.py --project my_novel --chapter 2 --scene 2-3 --mode draft --pov-character protagonist
+python scripts/build_keyframe_prompt.py --project my_novel --scene 2-3 --output keyframe_proposal.json
+# 外部エージェントがproposalを完成する
+python scripts/register_keyframes.py --project my_novel --scene 2-3 --input keyframe_proposal.json
+python scripts/build_draft_prompt.py --project my_novel --scene 2-3
 python scripts/check_scene_output.py --project my_novel --text draft_scene.txt
 python scripts/build_expand_prompt.py --project my_novel --draft_text draft_scene.txt
 python scripts/apply_expand_edits.py --project my_novel --text draft_scene.txt --edits expand_response.txt
@@ -133,8 +138,11 @@ python scripts/compile_agent_trace.py --project my_novel --grep "scene_checked|r
 日常運用では、個別 script を直接呼ぶ代わりに薄い統合 CLI を使えます。
 
 ```bash
-python scripts/run_scene_pipeline.py prepare --project my_novel --chapter 2 --scene 2-3
-python scripts/run_scene_pipeline.py prompt --project my_novel
+python scripts/run_scene_pipeline.py prepare --project my_novel --chapter 2 --scene 2-3 --pov-character protagonist
+python scripts/run_scene_pipeline.py keyframe-prompt --project my_novel --scene 2-3 --output keyframe_proposal.json
+# 外部エージェントがproposalを完成する
+python scripts/run_scene_pipeline.py register-keyframes --project my_novel --scene 2-3 --input keyframe_proposal.json
+python scripts/run_scene_pipeline.py prompt --project my_novel --scene 2-3
 python scripts/run_scene_pipeline.py check --project my_novel --text chapter_2_scene_3.txt
 python scripts/run_scene_pipeline.py repair --project my_novel --text chapter_2_scene_3.txt
 # checkが会話レビューを要求した場合、本文に根拠を記入してから提出する
@@ -224,3 +232,7 @@ python scripts/migrate_project_state.py --project my_novel
 - 新規 project は `05_chapter_outline.md` と `targets.target_total_chars` / `targets.target_length_profile` を canonical source として生成します。
 - 既存 project は `05_chapter_outline_100k.md` と legacy `length_mode` を残したままでも、runtime / prompt scripts が fallback として読み取れます。
 - planning gate の判定は `planning_gate_enabled` と `planning_gate_status` を主条件に扱います。`long_form_100k` は legacy fallback 用語です。
+
+### 選択的主観素材の基本方針
+
+新prepareは設定なしでも有効。選んだ主観素材は主に台詞ににじませる／地の文に出し、両方が不自然・冗長・テンポを損なう場合だけ理由付きで省略します。全発話への心理描写ノルマではありません。登録は本文承認ではなく、未来・他者の内心をcanonへ昇格しません。旧承認のexportは従来どおりですが、新規執筆・check・approveは現行の登録ゲートを通ります。旧 `build_llm_prompt.py` は限定文脈保証の対象外で、その本文も新ゲートを免除されません。詳細は [主観素材の手順](docs/narrative_keyframing.md)。

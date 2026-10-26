@@ -106,7 +106,8 @@ def select_memory(project_dir, *, target_scene_id, pov_character_id, entity_ids,
 
 def _section_info(section, reason=None):
     result = {"name": section["name"], "source_ids": list(section.get("source_ids", [])),
-              "sources": list(section.get("sources", [])), "chars": len(section["text"])}
+              "sources": list(section.get("sources", [])), "chars": len(section["text"]),
+              "required": bool(section.get("required"))}
     if reason:
         result["reason"] = reason
     return result

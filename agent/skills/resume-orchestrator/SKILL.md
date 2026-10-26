@@ -157,3 +157,11 @@ description: Recover project state, identify the correct next step, and route ba
 # Shared Long-Novel Contract
 
 開始前に `docs/long_novel_workflow.md` の対象・鮮度・検査・承認契約を適用する。意味記憶を扱う場合は `docs/story_memory_format.md` に従う。共通規則をここへ複製せず、役割固有の手順だけを上記に記載する。
+
+resumeは点検用。keyframing方針と次の不足入力を示し、POV不明を推測で埋めない。執筆へ移る際は同じsceneのdraft prepareへ戻り、中間生成・登録を経る。resume runtimeから生成しない。
+
+## 選択的主観素材と本文レビュー
+
+`docs/narrative_keyframing.md` に従う。新prepareでは設定なしでも基本有効で、明示POVを共有する。選んだ素材は主に台詞ににじませる／地の文に出し、省略は両経路が不自然・冗長・テンポを損なう具体的理由がある場合だけ。全発話への心理・仕草の追加をノルマにしない。素材の一人称文を本文へ逐語転記する必要はない。相手の内心を断定せず、作者用情報や未来の予定をPOVの既知事実・canonへ昇格しない。
+
+候補に関係する登録素材を本文のexact span・読者効果と照合し、台詞の言い直し等の暗示的反映も評価する。keep/revise/uncertainと改稿前後の正確な比較を維持する。候補外の短い台詞や地の文も自己評価するが、全主観を機械検査したとは主張しない。反映を省略へ変える場合は両経路の理由をproposalに記し再登録・prompt再生成・再checkする。expandは既に伝わる心理を重複説明せず文字数不足への局所増補のみ。

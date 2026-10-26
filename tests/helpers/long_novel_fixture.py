@@ -61,6 +61,8 @@ def make_long_novel(project_dir, *, chapters=20, scenes_per_chapter=5, chars_per
     if project.exists() and any(project.iterdir()):
         raise ValueError("fixture destination must be empty: {}".format(project))
     project.mkdir(parents=True, exist_ok=True)
+    from helpers.keyframe_fixtures import disable_keyframing
+    disable_keyframing(project)
     coordinates = [(c, s) for c in range(1, chapters + 1) for s in range(1, scenes_per_chapter + 1)]
     first_id = "{}-{}".format(*coordinates[0])
     secret_id = "{}-{}".format(*coordinates[min(1, len(coordinates) - 1)])

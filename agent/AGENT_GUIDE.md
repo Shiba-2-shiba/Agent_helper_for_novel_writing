@@ -77,3 +77,7 @@
 ## 20万字の共通運用
 
 `docs/long_novel_workflow.md` を正本手順とする。現行runtimeの対象ID・鮮度を確認し、本文はcheck→明示approveを経る。completedは機械検査passであり、承認・文学的完成とは別。記憶は承認済み本文から提案→検証→明示採用し、未採用・stale・未来の情報を過去事実として扱わない。詳しくは `docs/story_memory_format.md`。移行は `docs/migrate_100k_to_200k.md` のdry-runから行う。
+
+## 選択的主観素材
+
+`docs/narrative_keyframing.md` に従い、新prepareでは設定なしでも基本有効とする。明示POVの素材を外部エージェントが生成・登録し、主に台詞／地の文へ反映する。省略は両経路が不適切な具体的理由がある場合だけ。全発話への心理説明は不要。素材は創作提案で、他者の内心・未来の予定・作者用情報を人物の既知事実へ昇格しない。未登録やPOV不明ではdraft/check/expand/新規approveへ進まず、同じsceneで不足を解消する。旧承認の履歴検証と新規承認を区別する。

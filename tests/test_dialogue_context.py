@@ -167,19 +167,19 @@ def test_dialogue_selection_tampering_invalidates_runtime(tmp_path):
         require_runtime_current(str(project), str(runtime))
 
 
-def test_legacy_prompt_has_guidance_and_actionable_missing_pack_warning(tmp_path):
+def test_legacy_prompt_requires_same_scene_prepare_before_new_generation(tmp_path):
     from test_scripts import create_runtime_project
     project = Path(create_runtime_project(tmp_path))
     runtime = prepare_project(project)
-    # Old runtime without manifest and new pack is still supported, but explicit.
+    # Legacy approvals remain supported, but new generation needs a fresh feature contract.
     (runtime / "runtime_manifest.json").unlink()
     pack = runtime / "dialogue_context_pack.md"
     if pack.exists():
         pack.unlink()
     result = run_script("build_draft_prompt.py", "--project", project, "--scene", "2-3")
-    assert result.returncode == 0, result.stdout + result.stderr
-    assert "dialogue" in result.stdout and "prepare" in result.stdout
-    assert "受け取り" in (runtime / "draft_prompt.txt").read_text()
+    assert result.returncode != 0
+    assert "legacy runtime" in result.stdout and "prepare" in result.stdout
+    assert not (runtime / "draft_prompt.txt").exists()
 
 
 def test_local_expansion_keeps_selected_voice_and_selective_guidance(tmp_path):

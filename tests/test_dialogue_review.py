@@ -214,6 +214,11 @@ def test_real_review_cli_template_submit_approve_export_and_stale_refusal(tmp_pa
     # Custom runtime is scene-verified and need not match a global latest.
     custom = project / 'custom-runtime'
     rp.parent.rename(custom)
+    # This synthetic relocation creates fresh explicit-off identity evidence.
+    from helpers.keyframe_fixtures import bind_disabled_check_fixture
+    report["check_inputs"] = [r for r in report["check_inputs"] if r.get("selector") == "check_policy"]
+    bind_disabled_check_fixture(project, custom, report)
+    (custom / "check_report.json").write_text(json.dumps(report))
     scripts = Path(__file__).resolve().parents[1] / 'scripts'
     def run(name, *args):
         return subprocess.run([sys.executable, str(scripts / name), *args], capture_output=True, text=True)
@@ -390,6 +395,8 @@ def test_orphan_quote_prefix_blocks_real_check_and_new_approval(tmp_path, prefix
         assert result.returncode == 0, result.stdout + result.stderr
         return result
     run('init_project.py', project, '--target-total-chars', '30000')
+    from helpers.keyframe_fixtures import disable_keyframing
+    disable_keyframing(project)
     state = project / 'agent/state_schema_novel.yaml'
     state.write_text(state.read_text().replace('planning_gate_enabled: true', 'planning_gate_enabled: false'))
     write_outline(project, ['1-1'])

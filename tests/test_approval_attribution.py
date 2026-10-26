@@ -9,7 +9,7 @@ from novel_agent.approvals import approve_scene, read_approval_ledger, validate_
 from novel_agent.errors import DataCorruptionError, UserFacingError
 from novel_agent.exports import export_manuscript
 from novel_agent.storage import text_content_hash
-from test_approval_identity import setup_checked
+from test_approval_identity import setup_checked, setup_historical_checked
 
 
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
@@ -61,7 +61,7 @@ def test_incomplete_or_invalid_identity_cannot_write_approval(tmp_path, identity
 @pytest.mark.parametrize("legacy_by", [None, "user", "old-agent"])
 @pytest.mark.parametrize("version", [1, 2])
 def test_legacy_attribution_is_unknown_without_rewriting_or_invalidating_approval(tmp_path, legacy_by, version):
-    text, report_path = setup_checked(tmp_path)
+    text, report_path = setup_historical_checked(tmp_path)
     record = json.loads(report_path.read_text()) if version == 2 else {"version": 1}
     record.update(status="approved", scene_path="scene_1-1.txt",
                   content_hash=text_content_hash(str(text)), check_status="pass")

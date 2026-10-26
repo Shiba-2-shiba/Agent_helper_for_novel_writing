@@ -54,3 +54,22 @@ def test_hub_prioritizes_scene_length_contract():
     text = (ROOT / 'agent/HUB.md').read_text(encoding='utf-8')
     assert '対象Scene LedgerのLength Bandを優先' in text
     assert '1 シーンの文字数契約は原則 `1000-1500`' not in text
+
+
+@pytest.mark.parametrize('script,command,options', [
+    ('build_runtime_context.py', [], ['--keyframing', '--keyframing-reason']),
+    ('build_keyframe_prompt.py', [], ['--project', '--scene', '--runtime_dir', '--output']),
+    ('register_keyframes.py', [], ['--input', '--validate-only']),
+    ('run_scene_pipeline.py', [], ['keyframe-prompt', 'register-keyframes']),
+    ('run_scene_pipeline.py', ['prepare'], ['--keyframing', '--keyframing-reason']),
+])
+def test_keyframing_documented_entry_points(script, command, options):
+    result = subprocess.run([sys.executable, str(ROOT / 'scripts' / script)] + command + ['--help'],
+                            capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert all(option in result.stdout for option in options)
+
+
+def test_keyframing_guide_and_evaluation_protocol_are_present():
+    assert (ROOT / 'docs/narrative_keyframing.md').is_file()
+    assert (ROOT / 'agent/evals/narrative_keyframing_cases.md').is_file()

@@ -73,6 +73,8 @@ def write_report(project, reference_id, *, status='pass', blocking_issues=None, 
     report.update(updates)
     report_path = project / 'runtime' / 'scenes' / scene_id / 'draft' / 'check_report.json'
     report_path.parent.mkdir(parents=True, exist_ok=True)
+    from helpers.keyframe_fixtures import bind_disabled_check_fixture
+    bind_disabled_check_fixture(project, report_path.parent, report, scene_id=scene_id)
     report_path.write_text(json.dumps(report), encoding='utf-8')
     (report_path.parent / 'scene_brief_compact.md').write_text('- Scene ID: {}\n'.format(scene_id), encoding='utf-8')
     return report, report_path

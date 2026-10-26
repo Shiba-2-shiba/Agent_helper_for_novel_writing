@@ -53,7 +53,7 @@ def main():
         print('OK: incomplete dialogue review template written: ' + os.path.abspath(args.output))
     else:
         print(json.dumps(template, ensure_ascii=False, indent=2))
-    print('NEXT: read the source; distinguish information-Q&A compression from selective POV reception. Fill exact evidence, reason and reader_effect, then submit with --input. Empty templates are invalid.')
+    print('NEXT: read the source; distinguish information-Q&A compression from selective POV reception. Fill exact evidence, reason and reader_effect, then submit with --input. Compare relevant registered keyframes with exact prose spans; implicit dialogue realization need not copy the material literally. Re-register justified omission changes and recheck. Empty templates are invalid.')
 
 
 if __name__ == '__main__':

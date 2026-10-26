@@ -1,3 +1,4 @@
+from novel_agent.consumed_inputs import check_consumed_text, check_consumed_selection
 import argparse
 import json
 import os
@@ -128,8 +129,11 @@ def main():
         resolve_runtime_dir(project_dir, mode="draft", scene_ref=scene_ref, runtime_dir_arg=args.runtime_dir)
         if scene_ref or args.runtime_dir else os.path.join(project_dir, "runtime")
     )
+    keyframing = None
     if scene_ref:
         require_runtime_current(project_dir, runtime_dir)
+        from novel_agent.keyframe_runtime import require_keyframing_current, ensure_keyframing_unchanged, add_keyframing_sections
+        keyframing = require_keyframing_current(project_dir, runtime_dir, scene_ref["canonical_id"])
     report_path = (
         resolve_relative_path(args.check_report, base_dirs=[project_dir, runtime_dir], must_exist=True)
         if args.check_report
@@ -146,22 +150,30 @@ def main():
     input_specs.extend({"kind": "artifact" if os.path.isfile(path) else "file", "path": path}
                        for path in (memory_path, related_path, dialogue_path))
     if os.path.isfile(selection_path):
-        input_specs.append({"kind": "projection", "selector": "memory_selection", "path": selection_path})
+        input_specs.append({"kind": "projection", "selector": "memory_selection", "projection_version": 3, "path": selection_path})
+    if keyframing is not None:
+        input_specs += keyframing["dependency_specs"] + keyframing["artifact_specs"]
     try:
         inputs = snapshot_dependencies(project_dir, input_specs)
     except DataCorruptionError as exc:
         if report_path in str(exc):
             raise UserFacingError("check_report.json is invalid: %s" % exc)
         raise
+    def consumed(path):
+        text = read_text_file(path)
+        return check_consumed_text(project_dir, path, text, inputs) if scene_ref else text
     from novel_agent.dialogue_context import read_dialogue_pack
-    dialogue_context, dialogue_warning = read_dialogue_pack(runtime_dir)
+    if scene_ref:
+        dialogue_context, dialogue_warning = consumed(dialogue_path), ""
+    else:
+        dialogue_context, dialogue_warning = read_dialogue_pack(runtime_dir)
     if dialogue_warning:
         print("WARN: " + dialogue_warning)
-    draft_text = read_text_file(draft_path).strip()
+    draft_text = consumed(draft_path).strip()
     from prompt_utils import build_style_contract
-    style_contract = read_text_file(style_path).strip() if os.path.isfile(style_path) else build_style_contract(project_dir)[0]
+    style_contract = consumed(style_path).strip() if os.path.isfile(style_path) else build_style_contract(project_dir)[0]
     try:
-        report = json.loads(read_text_file(report_path))
+        report = json.loads(consumed(report_path))
     except json.JSONDecodeError:
         raise UserFacingError("check_report.json is invalid")
 
@@ -215,6 +227,8 @@ def main():
         ]
     )
     context_selection = read_json(selection_path, default_factory=dict)
+    if scene_ref:
+        check_consumed_selection(project_dir, selection_path, context_selection, inputs)
     sections = [{"name": "required_expansion_constraints_and_target", "text": prompt,
                  "required": True, "priority": 0, "source_ids": []}]
     sections.append({"name": "dialogue_context", "text": dialogue_context, "required": True,
@@ -222,15 +236,19 @@ def main():
     if context_selection.get("memory"):
         sections.extend(memory_prompt_sections(context_selection["memory"]))
     elif os.path.isfile(memory_path):
-        sections.append({"name": "story_memory", "text": read_text_file(memory_path),
+        sections.append({"name": "story_memory", "text": consumed(memory_path),
                          "required": False, "priority": 2, "source_ids": []})
     if os.path.isfile(related_path):
-        sections.append({"name": "related_context", "text": read_text_file(related_path),
+        sections.append({"name": "related_context", "text": consumed(related_path),
                          "required": False, "priority": 9, "source_ids": ["related_context_pack.md"]})
+    if keyframing is not None:
+        sections = add_keyframing_sections(project_dir, runtime_dir, keyframing, sections, expansion=True)
     assembled = assemble_prompt(sections)
     prompt = assembled["prompt"]
     if scene_ref and verify_dependencies(project_dir, inputs):
         raise UserFacingError("runtime changed during expansion prompt generation; prepare again")
+    if keyframing is not None:
+        ensure_keyframing_unchanged(project_dir, runtime_dir, scene_ref["canonical_id"], keyframing)
     context_selection["expand_prompt"] = {key: value for key, value in assembled.items() if key != "prompt"}
     if os.path.isfile(selection_path):
         atomic_write_json(selection_path, context_selection)

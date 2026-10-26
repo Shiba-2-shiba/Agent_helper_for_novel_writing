@@ -7,7 +7,7 @@ from novel_agent.errors import UserFacingError
 from novel_agent.storage import text_content_hash
 
 
-def setup_checked(tmp_path, status='pass'):
+def setup_historical_checked(tmp_path, status='pass'):
     path = tmp_path / 'scene_1-1.txt'
     path.write_text('日本語本文。')
     runtime = tmp_path / 'runtime' / 'scenes' / '1-1' / 'draft'
@@ -17,6 +17,15 @@ def setup_checked(tmp_path, status='pass'):
     inputs = snapshot_dependencies(str(tmp_path), [{'kind': 'projection', 'selector': 'check_policy', 'scene_id': '1-1'}])
     report = {'version': 2, 'scope': 'scene', 'scene_id': '1-1', 'source_path': 'scene_1-1.txt', 'source_hash': text_content_hash(str(path)), 'hash_algorithm': 'sha256-utf8-text-v1', 'check_inputs': inputs, 'check_inputs_digest': dependency_digest(inputs), 'status': status}
     report_path = runtime / 'check_report.json'
+    report_path.write_text(json.dumps(report))
+    return path, report_path
+
+
+def setup_checked(tmp_path, status='pass'):
+    path, report_path = setup_historical_checked(tmp_path, status)
+    from helpers.keyframe_fixtures import bind_disabled_check_fixture
+    report = json.loads(report_path.read_text())
+    bind_disabled_check_fixture(tmp_path, report_path.parent, report)
     report_path.write_text(json.dumps(report))
     return path, report_path
 

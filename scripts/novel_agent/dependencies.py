@@ -21,7 +21,7 @@ _OUTLINE_PATHS = [prefix + name for prefix in ("", "plot/", "memory/") for name 
 _GLOBAL_PATHS = ["agent/memory/global_notes.md", "memory/global_notes.md"]
 _SESSION_PATHS = ["agent/memory/session_notes.md", "memory/session_notes.md"]
 _SCENE_RE = re.compile(r"^(?:chapter_?(\d+)_scene_?(\d+)|scene_(\d+)-(\d+))\.txt$", re.IGNORECASE)
-_SELECTORS = {"check_policy", "runtime_policy", "resume_progress", "memory_selection", "dialogue_selection"}
+_SELECTORS = {"check_policy", "runtime_policy", "resume_progress", "memory_selection", "dialogue_selection", "keyframing_policy", "keyframing_selection"}
 _HASH_ALGORITHM = "sha256-utf8-text-v1"
 
 
@@ -316,7 +316,17 @@ def _voice_hash(project_dir, scene_id, voice_text, *, legacy=False, participants
                    participants=participants, pov_character_id=pov_character_id))
 
 
-def _projection(project_dir, selector, scene_id, path=None, *, legacy=True, participants=None, pov_character_id=None):
+def _projection(project_dir, selector, scene_id, path=None, *, legacy=True, participants=None, pov_character_id=None,
+                projection_version=2, enabled_override=None, reason_override=None):
+    if selector == "keyframing_policy":
+        from novel_agent.narrative_keyframes import keyframing_policy_value
+        return keyframing_policy_value(project_dir, scene_id=scene_id,
+                                      enabled_override=enabled_override, disable_reason=reason_override)
+    if selector == "keyframing_selection":
+        absolute, relative = _path(project_dir, path)
+        payload = read_json(absolute, default_factory=dict)
+        return {"exists": os.path.isfile(absolute), "selection": {key: payload.get(key) for key in
+                ("version", "config", "dialogue", "keyframing")}, "source_paths": [relative]}
     if selector == "dialogue_selection":
         absolute, relative = _path(project_dir, path)
         payload = read_json(absolute, default_factory=dict)
@@ -328,7 +338,8 @@ def _projection(project_dir, selector, scene_id, path=None, *, legacy=True, part
         # Final prompt reports are derived output; they must not change inputs.
         return {"exists": os.path.isfile(absolute),
                 "selection": {key: payload.get(key) for key in
-                              (("version", "config", "memory", "dialogue") if "dialogue" in payload
+                              (("version", "config", "memory", "dialogue", "keyframing") if projection_version == 3 else
+                               ("version", "config", "memory", "dialogue") if "dialogue" in payload
                                else ("version", "config", "memory"))},
                 "source_paths": [relative]}
     if selector == "check_policy":
@@ -421,7 +432,8 @@ def _snapshot_one(project_dir, spec, operation=None, *, legacy=False):
     # Include every selector/scope field, but not historical snapshot values.
     cache_key = _canonical_json([kind, relative, spec.get("scope", "prior"),
                            spec.get("selector"), spec.get("scene_id"), spec.get("target_scene_id"), legacy,
-                           spec.get("projection_version"), spec.get("participants"), spec.get("pov_character_id")])
+                           spec.get("projection_version"), spec.get("participants"), spec.get("pov_character_id"),
+                           spec.get("enabled_override"), spec.get("reason_override")])
     if cache_key in operation.snapshots:
         return operation.snapshots[cache_key]
     result = {"kind": kind, "path": relative}
@@ -456,14 +468,19 @@ def _snapshot_one(project_dir, spec, operation=None, *, legacy=False):
         if scene_id:
             result["scene_id"] = _scene_id(_scene_key(scene_id))
         projection_version = 1 if legacy else spec.get("projection_version", 2)
-        if type(projection_version) is not int or projection_version not in (1, 2):
+        if type(projection_version) is not int or projection_version not in (1, 2, 3):
             raise UserFacingError("unsupported projection version: {}".format(projection_version))
-        for field in ("participants", "pov_character_id"):
+        if projection_version == 3 and selector not in {"memory_selection", "keyframing_policy", "keyframing_selection"}:
+            raise UserFacingError("projection version 3 is only defined for keyframing inputs")
+        if selector in {"keyframing_policy", "keyframing_selection"} and projection_version != 3:
+            raise UserFacingError("keyframing projections require version 3")
+        for field in ("participants", "pov_character_id", "enabled_override", "reason_override"):
             if field in spec:
                 result[field] = spec[field]
         value = _projection(project_dir, selector, scene_id, path=relative,
                             legacy=projection_version == 1, participants=spec.get("participants"),
-                            pov_character_id=spec.get("pov_character_id"))
+                            pov_character_id=spec.get("pov_character_id"), projection_version=projection_version,
+                            enabled_override=spec.get("enabled_override"), reason_override=spec.get("reason_override"))
         result.update({"source_paths": value["source_paths"], "projection_hash": _digest(value)})
         if legacy:
             result["value"] = value
@@ -506,8 +523,12 @@ def compact_dependencies(records):
             raise DataCorruptionError("noncanonical legacy dependency version")
         if item.get("kind") == "projection":
             projection_version = item.get("projection_version", 1 if version == 1 else 2)
-            if type(projection_version) is not int or projection_version not in (1, 2):
+            if type(projection_version) is not int or projection_version not in (1, 2, 3):
                 raise DataCorruptionError("unsupported projection version")
+            if projection_version == 3 and item.get("selector") not in {"memory_selection", "keyframing_policy", "keyframing_selection"}:
+                raise DataCorruptionError("projection version 3 is only defined for keyframing inputs")
+            if item.get("selector") in {"keyframing_policy", "keyframing_selection"} and projection_version != 3:
+                raise DataCorruptionError("keyframing projections require version 3")
             if version == 2 and "value" in item:
                 raise DataCorruptionError("unexpected value in compact projection")
             if "value" in item and _digest(item["value"]) != item.get("projection_hash"):

@@ -82,6 +82,7 @@ def evaluate(project_dir):
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "python": sys.version, "status": "fail", "project": str(source),
         "execution_scope": "isolated_temporary_copy", "commands": [],
+        "keyframing_scope": {"enabled": False, "reason": "決定論的な機械検査の計測であり外部創作生成は未実施"},
         "metric_definitions": {
             "elapsed_seconds": "perf_counter wall time including interpreter startup and audit instrumentation",
             "read_open_events": "Python audit read-capable open attempts under the isolated project, excluding create/truncate/append opens; not kernel read syscalls",
@@ -126,7 +127,7 @@ def evaluate(project_dir):
             report["past_candidate_scene_count"] = sum(
                 (s["chapter"], s["scene"]) < (target["chapter"], target["scene"]) for s in scenes)
             directory = work / "runtime" / "scenes" / target_id / "draft"
-            run("build_runtime_context.py", ["--project", work, "--chapter", target["chapter"], "--scene", target_id, "--mode", "draft"])
+            run("build_runtime_context.py", ["--project", work, "--chapter", target["chapter"], "--scene", target_id, "--mode", "draft", "--keyframing", "off", "--keyframing-reason", "決定論的な機械検査の計測であり外部創作生成は未実施"])
             run("build_draft_prompt.py", ["--project", work, "--scene", target_id, "--runtime_dir", directory])
             report["prompt_chars"] = len((directory / "draft_prompt.txt").read_text(encoding="utf-8"))
             if report["prompt_chars"] > 16000:

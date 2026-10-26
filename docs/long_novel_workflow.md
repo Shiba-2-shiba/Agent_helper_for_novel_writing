@@ -23,8 +23,14 @@ python scripts/init_project.py my_novel --target-total-chars 200000 --chapter-co
 
 ## 1シーンの執筆
 
+[選択的主観素材](narrative_keyframing.md)は設定なしでも基本有効。明示POVの短い一人称創作素材を外部エージェントが生成・登録し、主に台詞／地の文へ反映する。両経路が不適切な場合だけ理由付きで省略し、全発話への心理説明は要求しない。素材登録は本文承認でもcanon登録でもない。POV不明・未登録では本文工程に進めない。
+
 ```sh
 python scripts/build_runtime_context.py --project my_novel --chapter 2 --scene 2-3 --mode draft --pov-character protagonist --entity protagonist --thread promise_01
+python scripts/build_keyframe_prompt.py --project my_novel --scene 2-3 --output keyframe_proposal.json
+# 外部エージェントが対象prompt/requestを読みproposalの未記入欄を完成する
+python scripts/register_keyframes.py --project my_novel --scene 2-3 --input keyframe_proposal.json --validate-only
+python scripts/register_keyframes.py --project my_novel --scene 2-3 --input keyframe_proposal.json
 python scripts/build_draft_prompt.py --project my_novel --scene 2-3
 ```
 
@@ -51,7 +57,7 @@ python scripts/review_scene_dialogue.py --project my_novel --scene 2-3 --output 
 python scripts/review_scene_dialogue.py --project my_novel --scene 2-3 --input review-input.json --reviewer-type agent --reviewer-id codex
 ```
 
-ひな型の空欄は本文を確認して埋める。revise/uncertainは承認を止め、改稿後は再checkと正確なbefore/after比較を行う。候補を0件にしても未解決の比較は消えない。`--allow-warnings` はこのレビューを免除しない。旧承認の歴史的な有効性には遡及適用せず、新規approveは旧checkでも正本から再抽出する。
+ひな型の空欄は本文を確認して埋める。revise/uncertainは承認を止め、改稿後は再checkと正確なbefore/after比較を行う。候補を0件にしても未解決の比較は消えない。`--allow-warnings` はこのレビューを免除しない。旧承認の歴史的な有効性には遡及適用しない。新規approveでは現行keyframing bindingを持つ再checkが必要で、会話候補も正本から検証する。
 
 内容をレビューし、明示的に承認する場合だけ次を実行する。
 
@@ -85,7 +91,7 @@ python scripts/build_runtime_context.py --project my_novel --chapter 2 --scene 2
 python scripts/sync_project_health.py --project my_novel --json
 ```
 
-再開資料と現物を照合する。written、checked、completed（現在の本文がpass）、approvedを区別する。本文の過去章を直したら再check・再approveし、関連する記憶と要約を再提案する。意味の変化を検討せずsource hashだけを更新してはならない。
+resumeは点検用で中間生成には使わない。執筆へ戻るときは同じsceneをdraftでprepareし、次の不足入力を解決する。再開資料と現物を照合する。written、checked、completed（現在の本文がpass）、approvedを区別する。本文の過去章を直したら再check・再approveし、関連する記憶と要約を再提案する。意味の変化を検討せずsource hashだけを更新してはならない。
 
 対象より未来の本文・記憶は通常draftの過去事実に使わない。人物Aの秘密を人物Bの知識として扱わない。作者の視点・人物の知識・今後の計画は別のラベルで読む。これらは入力の構造的制約であり、モデルが実際に守ったかは出力を評価する。
 

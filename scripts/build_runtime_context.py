@@ -540,6 +540,8 @@ def build_resume_brief(project_dir, scene_ref, previous_pack, session_notes_text
 def main():
     parser = argparse.ArgumentParser(description="Build compact runtime files for draft or resume mode.")
     parser.add_argument("--project", required=True, help="Path to the project directory")
+    parser.add_argument("--keyframing", choices=["on", "off"], default=None, help="Default on; off requires a reason")
+    parser.add_argument("--keyframing-reason", default=None, help="Specific reason for explicit off")
     parser.add_argument("--pov-character", default=None, help="Explicit POV character ID; omitted means unknown knowledge")
     parser.add_argument("--participant", action="append", default=None, help="Dialogue participant ID (repeatable); replaces scene defaults")
     parser.add_argument("--entity", action="append", default=[], help="Relevant entity ID (repeatable)")
@@ -598,7 +600,15 @@ def _build_runtime_context_locked(project_dir, args):
         input_specs.append({"kind": "file", "path": previous_path})
     input_specs.extend([{"kind": "file", "path": "story_memory/accepted.json"},
                         {"kind": "file", "path": "runtime/approval_ledger.json"}])
+    keyframing_override = None if getattr(args, "keyframing", None) is None else args.keyframing == "on"
+    policy_spec = {"kind": "projection", "selector": "keyframing_policy", "projection_version": 3,
+                   "scene_id": scene_ref["canonical_id"], "enabled_override": keyframing_override,
+                   "reason_override": getattr(args, "keyframing_reason", None)}
+    input_specs.append(policy_spec)
     initial_inputs = snapshot_dependencies(project_dir, input_specs)
+    from novel_agent.narrative_keyframes import resolve_keyframing_policy, build_keyframe_contract
+    keyframing_policy = resolve_keyframing_policy(project_dir, scene_id=scene_ref["canonical_id"],
+        enabled_override=keyframing_override, disable_reason=getattr(args, "keyframing_reason", None))
     from novel_agent.story_memory import load_memory, scene_key
     from novel_agent.approvals import read_approval_ledger
     source_specs = []
@@ -631,7 +641,12 @@ def _build_runtime_context_locked(project_dir, args):
                 if scene_key(source["scene_id"]) < scene_key(scene_ref["canonical_id"]):
                     approval = source_approvals.get(source["scene_id"], {})
                     for dependency in approval.get("check_inputs", []) or []:
-                        if isinstance(dependency, dict) and dependency.get("selector") == "dialogue_selection":
+                        if not isinstance(dependency, dict):
+                            continue
+                        if dependency.get("selector") in {"dialogue_selection", "keyframing_policy", "keyframing_selection"}:
+                            source_specs.append(dependency)
+                        elif ("keyframing" in approval and dependency.get("kind") == "file"
+                              and os.path.basename(dependency.get("path", "")) in {"narrative_keyframe_contract.json", "narrative_keyframes.json"}):
                             source_specs.append(dependency)
     initial_inputs.extend(snapshot_dependencies(project_dir, source_specs))
     # Never leave first-generation partial packs looking like a legacy runtime.
@@ -678,6 +693,15 @@ def _build_runtime_context_locked(project_dir, args):
     warnings.extend(dialogue["warnings"])
     previous_pack = find_previous_scene_pack(project_dir, scene_ref, previous_path)
     written_files = []
+    keyframe_contract = build_keyframe_contract(scene_id=scene_ref["canonical_id"],
+        pov_character_id=dialogue["pov_character_id"], policy=keyframing_policy)
+    keyframe_contract_path = os.path.join(runtime_dir, "narrative_keyframe_contract.json")
+    atomic_write_json(keyframe_contract_path, keyframe_contract)
+    written_files.append(keyframe_contract_path)
+    from novel_agent.storage import text_content_hash
+    keyframing_selection = {"policy": keyframing_policy, "pov_character_id": dialogue["pov_character_id"],
+        "status": keyframe_contract["status"], "contract_path": os.path.relpath(keyframe_contract_path, project_dir).replace(os.sep, "/"),
+        "contract_hash": text_content_hash(keyframe_contract_path)}
 
     if not previous_pack["full"]:
         warnings.append("previous scene not found, continuity pack contains fallback note")
@@ -757,7 +781,9 @@ def _build_runtime_context_locked(project_dir, args):
             os.path.join(project_dir, "memory", "session_notes.md")
         )
         resume_path = os.path.join(runtime_dir, "resume_brief.md")
-        write_text_file(resume_path, build_resume_brief(project_dir, scene_ref, previous_pack, session_notes, planning_meta) + "\n")
+        write_text_file(resume_path, build_resume_brief(project_dir, scene_ref, previous_pack, session_notes, planning_meta) +
+                        "\nNarrative keyframing: " + keyframe_contract["status"] +
+                        "\n執筆するには同じsceneを --mode draft でprepare。POV未指定なら --pov-character、無効なら理由付き --keyframing off。\n")
         written_files.append(resume_path)
 
         refresh_scene_summaries(project_dir)
@@ -775,7 +801,8 @@ def _build_runtime_context_locked(project_dir, args):
     memory_path = os.path.join(runtime_dir, "story_memory_pack.md")
     selection_path = os.path.join(runtime_dir, "context_selection.json")
     write_text_file(memory_path, render_memory_pack(memory_selection))
-    atomic_write_json(selection_path, {"version": 1, "memory": memory_selection,
+    atomic_write_json(selection_path, {"version": 2, "memory": memory_selection,
+                                     "keyframing": keyframing_selection,
                                      "dialogue": {key: value for key, value in dialogue.items() if key != "text"},
                                      "config": {"pov_character_id": dialogue["pov_character_id"], "entity_ids": args.entity,
                                                 "thread_ids": args.thread, "target_scene_id": scene_ref["canonical_id"]}})
@@ -844,14 +871,16 @@ def _build_runtime_context_locked(project_dir, args):
     _sync_status_projections_locked(project_dir, collect_project_status(project_dir))
     if verify_dependencies(project_dir, initial_inputs):
         raise UserFacingError("project inputs changed during runtime generation; prepare again")
-    derived_specs = [{"kind": "projection", "selector": "memory_selection", "path": selection_path}]
+    derived_specs = [{"kind": "projection", "selector": "memory_selection", "projection_version": 3, "path": selection_path},
+                     {"kind": "projection", "selector": "keyframing_selection", "projection_version": 3,
+                      "scene_id": scene_ref["canonical_id"], "path": selection_path}]
     if args.mode == "resume":
         derived_specs.append({"kind": "projection", "selector": "resume_progress"})
     # Preserve the evidence captured before reading, rather than blessing changed
     # originals by resnapshotting them after the final freshness check.
     runtime_inputs = initial_inputs + snapshot_dependencies(project_dir, derived_specs)
     _register_runtime_artifacts(project_dir, written_files, outline_path, dependencies=runtime_inputs)
-    write_runtime_manifest(project_dir, runtime_dir, scene_id=scene_ref["canonical_id"], mode=args.mode, files=[path for path in written_files if path != selection_path], inputs=runtime_inputs)
+    write_runtime_manifest(project_dir, runtime_dir, scene_id=scene_ref["canonical_id"], mode=args.mode, files=[path for path in written_files if path != selection_path], inputs=runtime_inputs, features={"narrative_keyframing": 1})
     append_trace_event(
         project_dir,
         event_type="runtime_generated",
@@ -880,6 +909,7 @@ def _build_runtime_context_locked(project_dir, args):
         },
     )
 
+    print("OK: narrative keyframing=" + keyframe_contract["status"])
     for warning in warnings:
         print(f"WARN: {warning}")
     print(f"OK: runtime context generated for chapter {args.chapter} scene {scene_ref['scene']}")

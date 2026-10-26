@@ -151,6 +151,7 @@ def main():
 
     text_path = resolve_relative_path(args.text, base_dirs=[project_dir], must_exist=True)
     scene_ref = infer_scene_ref_from_path(text_path)
+    keyframing = None
     if scene_ref:
         from prompt_utils import find_scene_file
         canonical = find_scene_file(project_dir, scene_ref)
@@ -168,6 +169,8 @@ def main():
                 raise UserFacingError("same-scene prepare failed: " + result.stdout.strip())
             runtime_dir = resolve_runtime_dir(project_dir, mode="draft", scene_ref=scene_ref)
         require_runtime_current(project_dir, runtime_dir)
+        from novel_agent.keyframe_runtime import require_keyframing_current, ensure_keyframing_unchanged
+        keyframing = require_keyframing_current(project_dir, runtime_dir, scene_ref["canonical_id"])
         from novel_agent.storage import read_json
         selection = read_json(os.path.join(runtime_dir, "context_selection.json"), default_factory=dict).get("dialogue", {})
         policy_guard, policy = snapshot_check_policy(
@@ -188,6 +191,8 @@ def main():
         scene_band = None
         obligation_contract = None
         specs = [{"kind": "file", "path": os.path.join(runtime_dir, "style_contract_compact.md")}]
+    if keyframing is not None:
+        specs += keyframing["dependency_specs"]
     check_inputs = snapshot_dependencies(project_dir, specs)
     if scene_ref:
         check_inputs.insert(0, policy_guard)
@@ -273,11 +278,16 @@ def main():
         **quality_assessment,
     }
 
+    if keyframing is not None:
+        report["keyframing"] = keyframing["binding"]
+        report["keyframing_snapshot"] = keyframing["approval_snapshot"]
     output_path = os.path.join(runtime_dir, "check_report.json")
     # Check against current source and policy again immediately before persistence.
     with project_lock(project_dir):
         if scene_ref:
             require_runtime_current(project_dir, runtime_dir)
+        if keyframing is not None:
+            ensure_keyframing_unchanged(project_dir, runtime_dir, scene_ref["canonical_id"], keyframing)
         validate_check_identity(project_dir, scene_ref, text_path, report)
         report['dialogue_review_contract'] = build_scene_dialogue_contract(project_dir, scene_ref, body_text)
         write_json_file(output_path, report)

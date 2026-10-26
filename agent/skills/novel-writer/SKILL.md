@@ -43,7 +43,9 @@ description: Draft new scene prose for an existing novel project. Use when the u
 
 - 対象シーンの scene-scoped `runtime/draft_prompt.txt` があり、対象の `chapter` / `scene` と矛盾しないなら再利用する
 - `runtime/draft_prompt.txt` がない、または `runtime/` の必須ファイルが欠けている場合は、先に以下を実行して更新する
-- `python scripts/build_runtime_context.py --project <project_path> --chapter <chapter> --scene <scene> --mode draft`
+- `python scripts/build_runtime_context.py --project <project_path> --chapter <chapter> --scene <scene> --mode draft --pov-character <pov_id>`
+- `python scripts/build_keyframe_prompt.py --project <project_path> --scene <scene> --output keyframe_proposal.json`
+- 対象prompt/requestを読み外部エージェントとしてproposalを完成し、`python scripts/register_keyframes.py --project <project_path> --scene <scene> --input keyframe_proposal.json` で明示登録する
 - `python scripts/build_draft_prompt.py --project <project_path> --scene <scene>`
 - 会話カードは `docs/dialogue_context.md` のprepare手順で対象参加者・POVだけを選ぶ。参加者未指定・カード欠落のwarningは根拠のない人物設定で埋めず、必要な入力を確認する
 - `Depends On` があるシーンは、依存先 `txt` が無い場合に本文執筆へ進めない
@@ -53,7 +55,7 @@ description: Draft new scene prose for an existing novel project. Use when the u
 ## 2. 文脈を集める
 
 - まず `runtime/draft_prompt.txt` を読み、そこに含まれる制約を優先する
-- `runtime/draft_prompt.txt` がなければ、`runtime/style_contract_compact.md`、`runtime/scene_brief_compact.md`、`runtime/continuity_pack.md`、`runtime/dialogue_context_pack.md`、`runtime/request_compact.md` を読む
+- `runtime/draft_prompt.txt` がなければ、個別packだけで執筆を始めず、上の中間生成・登録とprompt生成を完了する
 - `runtime/planning_gate_brief.md` がある場合は、`Planning Gate` が `ready` かを本文執筆前に確認する
 - `runtime/scene_brief_compact.md` に `Scene Type` と `Length Band` がある場合は、それを文字数契約の正本として扱う
 - `runtime/scene_brief_compact.md` または `runtime/obligation_contract.json` に `Obligation Contract` がある場合は、依存シーン、必須到達点、回収/種まきを本文の契約として扱う
@@ -140,3 +142,9 @@ description: Draft new scene prose for an existing novel project. Use when the u
 ## Dialogue Review Gate
 
 新規approve前には全候補へkeep/revise/uncertainと正確な本文根拠を記録する。情報だけの問答の圧縮と、印象が返答を変える選択的な受け止めを区別する。軽快な応酬のkeepも理由を残し、4発話ごとの心理・仕草追加規則にはしない。手順とCLIは `docs/dialogue_context.md` に従う。空欄のひな型はレビュー済みではなく、automationや `--allow-warnings` で免除しない。既存承認の歴史的検証と、新規承認のレビュー条件を区別する。
+
+## 選択的主観素材と本文レビュー
+
+`docs/narrative_keyframing.md` に従う。新prepareでは設定なしでも基本有効で、明示POVを共有する。選んだ素材は主に台詞ににじませる／地の文に出し、省略は両経路が不自然・冗長・テンポを損なう具体的理由がある場合だけ。全発話への心理・仕草の追加をノルマにしない。素材の一人称文を本文へ逐語転記する必要はない。相手の内心を断定せず、作者用情報や未来の予定をPOVの既知事実・canonへ昇格しない。
+
+候補に関係する登録素材を本文のexact span・読者効果と照合し、台詞の言い直し等の暗示的反映も評価する。keep/revise/uncertainと改稿前後の正確な比較を維持する。候補外の短い台詞や地の文も自己評価するが、全主観を機械検査したとは主張しない。反映を省略へ変える場合は両経路の理由をproposalに記し再登録・prompt再生成・再checkする。expandは既に伝わる心理を重複説明せず文字数不足への局所増補のみ。

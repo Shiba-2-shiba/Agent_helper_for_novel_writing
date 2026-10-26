@@ -7,6 +7,7 @@ from novel_agent.ledgers import append_token_ledger, find_artifacts_by_paths
 from novel_agent.trace import append_trace_event
 from novel_agent.memory_context import assemble_prompt, memory_prompt_sections
 from novel_agent.storage import read_json, atomic_write_json
+from novel_agent.consumed_inputs import check_consumed_text, check_consumed_selection
 from prompt_utils import (
     DEFAULT_MAX_CHARS,
     DEFAULT_MIN_CHARS,
@@ -90,9 +91,14 @@ def main():
     if not os.path.isdir(project_dir):
         raise UserFacingError(f"project directory not found: {project_dir}")
 
-    runtime_dir = resolve_runtime_dir(project_dir, mode="draft", scene_ref=parse_scene_reference(args.scene) if args.scene else None, runtime_dir_arg=args.runtime_dir)
+    scene_ref = parse_scene_reference(args.scene) if args.scene else None
+    runtime_dir = resolve_runtime_dir(project_dir, mode="draft", scene_ref=scene_ref, runtime_dir_arg=args.runtime_dir)
     from novel_agent.runtime_paths import require_runtime_current
     require_runtime_current(project_dir, runtime_dir)
+    from novel_agent.keyframe_runtime import require_keyframing_current, ensure_keyframing_unchanged, add_keyframing_sections
+    from novel_agent.runtime_paths import validate_runtime_identity
+    keyframe_scene_id = validate_runtime_identity(project_dir, runtime_dir, scene_id=scene_ref["canonical_id"] if scene_ref else None, mode="draft")["scene_id"]
+    keyframing = require_keyframing_current(project_dir, runtime_dir, keyframe_scene_id)
 
     style_path = require_existing_file(os.path.join(runtime_dir, "style_contract_compact.md"), "runtime/style_contract_compact.md")
     brief_path = require_existing_file(os.path.join(runtime_dir, "scene_brief_compact.md"), "runtime/scene_brief_compact.md")
@@ -105,18 +111,23 @@ def main():
         (style_path, brief_path, continuity_path, request_path, os.path.join(runtime_dir, "planning_gate_brief.md"),
          os.path.join(runtime_dir, "story_memory_pack.md"), os.path.join(runtime_dir, "related_context_pack.md"),
          os.path.join(runtime_dir, "dialogue_context_pack.md"))
-    ] + ([{"kind": "projection", "selector": "memory_selection", "path": os.path.join(runtime_dir, "context_selection.json")}]
+    ] + ([{"kind": "projection", "selector": "memory_selection", "projection_version": 3, "path": os.path.join(runtime_dir, "context_selection.json")}]
          if os.path.isfile(os.path.join(runtime_dir, "context_selection.json")) else []))
-    style_contract = read_text_file(style_path).strip()
-    scene_brief = read_text_file(brief_path).strip()
-    continuity_pack = read_text_file(continuity_path).strip()
-    request_compact = read_text_file(request_path).strip()
-    planning_gate_brief = read_optional_text(os.path.join(runtime_dir, "planning_gate_brief.md")).strip()
+    prompt_inputs += snapshot_dependencies(project_dir, keyframing["dependency_specs"] + keyframing["artifact_specs"])
+    def consumed(path, optional=False):
+        text = read_optional_text(path) if optional else read_text_file(path)
+        return check_consumed_text(project_dir, path, text, prompt_inputs)
+    style_contract = consumed(style_path).strip()
+    scene_brief = consumed(brief_path).strip()
+    continuity_pack = consumed(continuity_path).strip()
+    request_compact = consumed(request_path).strip()
+    planning_gate_brief = consumed(os.path.join(runtime_dir, "planning_gate_brief.md"), optional=True).strip()
     for artifact in find_artifacts_by_paths(project_dir, (style_path, brief_path, continuity_path, request_path)):
         if artifact and artifact.get("status") == "stale":
             print(f"WARN: stale runtime artifact detected: {artifact.get('path')}")
     from novel_agent.dialogue_context import read_dialogue_pack
-    dialogue_context, dialogue_warning = read_dialogue_pack(runtime_dir)
+    dialogue_context = consumed(os.path.join(runtime_dir, "dialogue_context_pack.md"))
+    dialogue_warning = ""
     if dialogue_warning:
         print("WARN: " + dialogue_warning)
     scene_brief_meta = parse_scene_brief_metadata(scene_brief)
@@ -168,9 +179,9 @@ def main():
         ]
     )
     selection_path = os.path.join(runtime_dir, "context_selection.json")
-    context_selection = read_json(selection_path, default_factory=dict)
-    related_context = read_optional_text(os.path.join(runtime_dir, "related_context_pack.md")).strip()
-    memory_pack = read_optional_text(os.path.join(runtime_dir, "story_memory_pack.md")).strip()
+    context_selection = check_consumed_selection(project_dir, selection_path, read_json(selection_path, default_factory=dict), prompt_inputs)
+    related_context = consumed(os.path.join(runtime_dir, "related_context_pack.md"), optional=True).strip()
+    memory_pack = consumed(os.path.join(runtime_dir, "story_memory_pack.md"), optional=True).strip()
     prompt, output_contract = prompt.split("\n\n## Output Contract\n\n", 1)
     sections = [{"name": "required_constraints_and_planning", "text": prompt, "required": True,
                  "priority": 0, "source_ids": []},
@@ -189,10 +200,10 @@ def main():
         {"name": "related_context", "text": related_context, "required": False,
          "priority": 9, "source_ids": ["related_context_pack.md"]},
     ])
+    sections = add_keyframing_sections(project_dir, runtime_dir, keyframing, sections)
     assembled = assemble_prompt(sections)
     prompt = assembled["prompt"]
     context_selection["final_prompt"] = {key: value for key, value in assembled.items() if key != "prompt"}
-    atomic_write_json(selection_path, context_selection)
     estimated_tokens = estimate_tokens(prompt)
     part_estimates = {
         "style_contract": estimate_tokens(style_contract),
@@ -206,6 +217,8 @@ def main():
     output_path = os.path.join(runtime_dir, "draft_prompt.txt")
     if verify_dependencies(project_dir, prompt_inputs) and os.path.isfile(os.path.join(runtime_dir, "runtime_manifest.json")):
         raise UserFacingError("runtime changed during prompt generation; prepare again")
+    ensure_keyframing_unchanged(project_dir, runtime_dir, keyframe_scene_id, keyframing)
+    atomic_write_json(selection_path, context_selection)
     write_text_file(output_path, prompt)
     from novel_agent.dependencies import snapshot_dependencies
     from novel_agent.ledgers import register_artifact

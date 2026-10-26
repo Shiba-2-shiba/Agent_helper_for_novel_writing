@@ -34,7 +34,19 @@ def main():
     prepare.add_argument("--pov-character", default=None)
     prepare.add_argument("--entity", action="append", default=[])
     prepare.add_argument("--thread", action="append", default=[])
+    prepare.add_argument("--keyframing", choices=["on", "off"], default=None)
+    prepare.add_argument("--keyframing-reason", default=None)
     prepare.add_argument("--force", action="store_true")
+
+    keyframe = sub.add_parser("keyframe-prompt")
+    register = sub.add_parser("register-keyframes")
+    for child in (keyframe, register):
+        child.add_argument("--project", required=True)
+        child.add_argument("--scene", required=True)
+        child.add_argument("--runtime_dir", default="")
+    keyframe.add_argument("--output")
+    register.add_argument("--input", required=True)
+    register.add_argument("--validate-only", action="store_true")
 
     prompt = sub.add_parser("prompt")
     prompt.add_argument("--project", required=True)
@@ -88,6 +100,9 @@ def main():
         script_args = ["--project", project_dir, "--chapter", args.chapter, "--scene", args.scene, "--mode", args.mode]
         if args.force:
             script_args.append("--force")
+        for attr, flag in (("keyframing", "--keyframing"), ("keyframing_reason", "--keyframing-reason")):
+            if getattr(args, attr, None) is not None:
+                script_args.extend([flag, getattr(args, attr)])
         for participant in args.participant or []:
             script_args.extend(["--participant", participant])
         if args.pov_character is not None:
@@ -96,7 +111,26 @@ def main():
             for value in getattr(args, option):
                 script_args.extend(["--" + option, value])
         _run_script("build_runtime_context.py", script_args)
-        print("NEXT: run prompt to build draft_prompt.txt")
+        from novel_agent.storage import read_json
+        from prompt_utils import parse_scene_reference
+        scene_id = parse_scene_reference(args.scene)["canonical_id"]
+        contract = read_json(os.path.join(project_dir, "runtime", "scenes", scene_id, args.mode, "narrative_keyframe_contract.json"), default_factory=dict)
+        if args.mode == "resume":
+            print("NEXT: inspect resume; prepare the same scene in draft mode before writing")
+        elif contract.get("status") == "needs_pov":
+            print("NEXT: prepare the same scene with --pov-character ID, or explicit --keyframing off --keyframing-reason REASON")
+        elif contract.get("status") == "disabled":
+            print("NEXT: run prompt to build draft_prompt.txt (keyframing explicitly disabled)")
+        else:
+            print("NEXT: run keyframe-prompt, let an external agent complete the proposal, then register-keyframes")
+    elif args.command in {"keyframe-prompt", "register-keyframes"}:
+        script_args = ["--project", project_dir, "--scene", args.scene]
+        for attr in ("runtime_dir", "output", "input"):
+            if getattr(args, attr, None):
+                script_args.extend(["--" + attr, getattr(args, attr)])
+        if getattr(args, "validate_only", False):
+            script_args.append("--validate-only")
+        _run_script("build_keyframe_prompt.py" if args.command == "keyframe-prompt" else "register_keyframes.py", script_args)
     elif args.command == "prompt":
         script_args = ["--project", project_dir]
         if args.scene:

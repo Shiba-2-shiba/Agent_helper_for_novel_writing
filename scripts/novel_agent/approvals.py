@@ -120,6 +120,19 @@ def validate_check_identity(project_dir, scene_ref, scene_path, report):
         raise UserFacingError("check report conditions are invalid; recheck required")
     if scene_ref and not any(item.get("kind") == "projection" and item.get("selector") == "check_policy" and item.get("scene_id") == scene_ref["canonical_id"] for item in inputs):
         raise UserFacingError("check report lacks current policy binding; recheck required")
+    if ("keyframing" in report or "keyframing_snapshot" in report
+            or any(item.get("selector") in {"keyframing_policy", "keyframing_selection"} for item in inputs)):
+        if not scene_ref or "keyframing" not in report or "keyframing_snapshot" not in report:
+            raise UserFacingError("incomplete keyframing check evidence; recheck required")
+        from novel_agent.keyframe_runtime import validate_keyframing_binding, validate_keyframing_snapshot
+        validate_keyframing_binding(report["keyframing"], inputs)
+        validate_keyframing_snapshot(report["keyframing_snapshot"], report["keyframing"])
+        snapshot = report["keyframing_snapshot"]
+        if snapshot is not None and snapshot["proposal"]["scene_id"] != scene_ref["canonical_id"]:
+            raise UserFacingError("keyframing snapshot scene identity mismatch")
+        if any(item.get("selector") in {"keyframing_policy", "keyframing_selection"}
+               and item.get("scene_id") != scene_ref["canonical_id"] for item in inputs):
+            raise UserFacingError("keyframing guard scene identity mismatch")
     if verify_dependencies(project_dir, inputs):
         raise UserFacingError("check conditions changed; prepare and recheck required")
 
@@ -130,6 +143,11 @@ def validate_approval_current(project_dir, record):
     if result["status"] != "approved":
         return result
     path = os.path.join(project_dir, record.get("source_path", record.get("scene_path", "")))
+    if legacy and ("keyframing" in record or "keyframing_snapshot" in record
+                   or any(isinstance(item, dict) and item.get("selector") in {"keyframing_policy", "keyframing_selection"}
+                          for item in record.get("check_inputs", []) or [])):
+        result.update(status="stale", reasons=["keyframing evidence requires version 2 approval"] )
+        return result
     if legacy:
         if not record.get("content_hash") or record["content_hash"] != file_content_hash(path):
             result.update(status="stale", reasons=["scene text changed"])
@@ -191,6 +209,13 @@ def approve_scene(project_dir, scene_raw, *, allow_warnings=False, runtime_dir_a
         report_path = resolve_check_report_path(project_dir, scene_ref, runtime_dir_arg=runtime_dir_arg)
         report = _load_check_report(report_path)
         validate_check_identity(project_dir, scene_ref, scene_path, report)
+        if "keyframing" not in report or "keyframing_snapshot" not in report:
+            raise UserFacingError("check lacks keyframing binding; same-scene prepare and recheck required")
+        from novel_agent.keyframe_runtime import require_keyframing_current, ensure_keyframing_unchanged
+        runtime_dir = os.path.dirname(report_path)
+        keyframing = require_keyframing_current(project_dir, runtime_dir, scene_ref["canonical_id"])
+        if report["keyframing"] != keyframing["binding"] or report["keyframing_snapshot"] != keyframing["approval_snapshot"]:
+            raise UserFacingError("keyframing changed since check; recheck required")
         status = str(report.get("status", "")).lower()
         if status == "fail":
             raise UserFacingError("scene has failing check_report status; cannot approve")
@@ -205,6 +230,8 @@ def approve_scene(project_dir, scene_raw, *, allow_warnings=False, runtime_dir_a
         payload = read_approval_ledger(project_dir)
         scene_id = scene_ref["canonical_id"]
         record = {key: report[key] for key in ("version", "scene_id", "source_path", "source_hash", "hash_algorithm", "check_inputs", "check_inputs_digest")}
+        record["keyframing"] = keyframing["binding"]
+        record["keyframing_snapshot"] = keyframing["approval_snapshot"]
         record.update(status="approved", approved_at=utc_now(), **attribution,
                       scene_path=_relative(scene_path, project_dir), check_report_path=_relative(report_path, project_dir),
                       check_status=status, content_hash=report["source_hash"], notes=notes)
@@ -218,6 +245,7 @@ def approve_scene(project_dir, scene_raw, *, allow_warnings=False, runtime_dir_a
         # The repository lock does not stop an external editor. Revalidate
         # immediately before the only approval write.
         validate_check_identity(project_dir, scene_ref, scene_path, report)
+        ensure_keyframing_unchanged(project_dir, runtime_dir, scene_id, keyframing)
         payload["scenes"][scene_id] = record
         write_approval_ledger(project_dir, payload)
         _sync_status_locked(project_dir)
